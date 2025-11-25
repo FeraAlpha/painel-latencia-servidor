@@ -1,7 +1,7 @@
 #!/system/bin/sh
 
 ###############################################################################
-# 🔄 AUTO-UPDATE DO PAINEL (GIT HUB)
+# 🔄 VERIFICAÇÃO DE UPDATE ANTES DO LOGIN
 ###############################################################################
 
 PAINEL_URL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh?$(date +%s)"
@@ -9,44 +9,64 @@ HASH_URL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/m
 
 SELF="$0"
 LOCAL_HASH="/data/local/tmp/painel_hash"
-TMP_DL="/data/local/tmp/painel_dl.sh"
+TMP_DL="/data/local/tmp/painel_new.sh"
 
 [ ! -f "$LOCAL_HASH" ] && echo "0" > "$LOCAL_HASH"
-LOCAL=$(cat "$LOCAL_HASH")
 
-REMOTE=$(curl -fsSL "$HASH_URL" | sed 's/[^0-9a-fA-F]//g')
-
-if [ "$REMOTE" != "$LOCAL" ] && [ -n "$REMOTE" ]; then
+verificar_update() {
     clear
-    echo "==============================================="
-    echo "      🔄 Atualização disponível — FERA ALPHA"
-    echo "==============================================="
-    echo ""
-    echo "Baixando nova versão..."
+    echo -e "\033[1;36m🔍 Verificando atualização do painel...\033[0m"
+    sleep 0.5
+
+    LOCAL=$(cat "$LOCAL_HASH")
+    REMOTO=$(curl -fsSL "$HASH_URL" | sed 's/[^0-9a-fA-F]//g')
+
+    if [ -z "$REMOTO" ]; then
+        echo -e "\033[1;33m⚠ Não foi possível verificar atualização.\033[0m"
+        sleep 0.7
+        return 0
+    fi
+
+    if [ "$LOCAL" = "$REMOTO" ]; then
+        echo -e "\033[1;32m✔ Painel já está atualizado!\033[0m"
+        sleep 0.7
+        return 0
+    fi
+
+    echo -e "\033[1;34m🔄 Nova versão encontrada! Baixando...\033[0m"
+    sleep 0.3
+
     curl -fsSL "$PAINEL_URL" -o "$TMP_DL"
 
-    if [ -s "$TMP_DL" ]; then
-        NEW=$(sha256sum "$TMP_DL" | awk '{print $1}')
-        if [ "$NEW" = "$REMOTE" ]; then
-            cp -f "$TMP_DL" "$SELF"
-            chmod 755 "$SELF"
-            echo "$REMOTE" > "$LOCAL_HASH"
-            echo ""
-            echo "✔ Atualizado com sucesso!"
-            echo "Reabra o painel:"
-            echo ""
-            echo "  sh painel-latencia.sh"
-            exit
-        else
-            echo "❌ Erro: hash incorreto. Abortando atualização."
-        fi
-    else
-        echo "❌ Falha ao baixar arquivo."
+    if [ ! -s "$TMP_DL" ]; then
+        echo -e "\033[1;31m❌ Erro ao baixar nova versão.\033[0m"
+        sleep 1
+        return 0
     fi
-fi
+
+    NEW_HASH=$(sha256sum "$TMP_DL" | awk '{print $1}')
+    if [ "$NEW_HASH" != "$REMOTO" ]; then
+        echo -e "\033[1;31m❌ Hash incorreto. Atualização abortada.\033[0m"
+        sleep 1
+        return 0
+    fi
+
+    cp -f "$TMP_DL" "$SELF"
+    chmod 755 "$SELF"
+    echo "$REMOTO" > "$LOCAL_HASH"
+
+    clear
+    echo -e "\033[1;32m✔ Painel atualizado com sucesso!\033[0m"
+    echo ""
+    echo "Reabra o painel:"
+    echo -e "\033[1;36msh $SELF\033[0m"
+    exit
+}
+
+verificar_update
 
 ###############################################################################
-# RESTO DO SISTEMA — SUA BASE ORIGINAL MANTIDA
+# RESTO DO SEU SISTEMA (NÃO ALTERADO)
 ###############################################################################
 
 MODDIR=${0%/*}
@@ -100,48 +120,56 @@ ativar_servidor() {
 }
 
 ###############################################################################
-# 🎨 INTERFACE PREMIUM FERA ALPHA — REWORK TOTAL
+# 🎨 INTERFACE COM ANIMAÇÃO MAIS RÁPIDA
 ###############################################################################
 
 loading_bar() {
   clear
-  echo -e "\n\033[1;36mINICIANDO SISTEMA FERA ALPHA...\033[0m\n"
+  echo -e "\n\033[1;36mCarregando Painel FERA ALPHA...\033[0m\n"
+
   bar=""
-  max=35
+  max=20
   i=1
+
   while [ $i -le $max ]; do
     bar="${bar}█"
     pct=$(( i * 100 / max ))
-    printf "\r\033[1;32m[%-35s] %d%%\033[0m" "$bar" "$pct"
-    sleep 0.02
+    printf "\r\033[1;32m[%-20s] %d%%\033[0m" "$bar" "$pct"
+    sleep 0.015
     i=$((i+1))
   done
-  sleep 0.3
+
+  sleep 0.2
   clear
 }
 
-header_anim() {
+print_header() {
+  clear
   cols=$(stty size | awk '{print $2}')
-  TITLE="FERA ALPHA LOGIN"
-  PAD=$(( (cols - ${#TITLE}) / 2 ))
-  printf "%${PAD}s" " "
-  echo -e "\033[1;35m$TITLE\033[0m"
-  sleep 0.05
-}
 
-login_caixa() {
-  echo -e "\033[1;34m┌─────────────────────────────┐\033[0m"
-  echo -e "\033[1;34m│     🔐 ACESSO RESTRITO       │\033[0m"
-  echo -e "\033[1;34m└─────────────────────────────┘\033[0m"
+  t1="FERA ALPHA"
+  t2="LOGIN"
+
+  line=$(printf "%${#t1}s" | tr " " "=")
+
+  printf "%$(( (cols - ${#t1}*3 ) / 2 ))s"
+  echo -e "\033[1;35m$line  $t1  $line\033[0m"
+
+  sleep 0.03
+
+  printf "%$(( (cols - ${#t2}) / 2 ))s"
+  echo -e "\033[1;37m$t2\033[0m"
+
+  echo ""
 }
 
 input_login() {
-  echo -e "\033[1;36mUsuário:\033[0m"
-  printf "> "
+  echo -e "\033[1;34m┌─ Usuário\033[0m"
+  echo -n "└─> "
   read USER
 
-  echo -e "\033[1;36mSenha:\033[0m"
-  printf "> "
+  echo -e "\033[1;34m┌─ Senha\033[0m"
+  echo -n "└─> "
   stty -echo
   read PASS
   stty echo
@@ -159,22 +187,16 @@ erro_login() {
 bem_vindo() {
   clear
   echo -e "\033[1;32m✔ Login autorizado!\033[0m"
-  sleep 0.8
+  sleep 0.3
   clear
 }
 
-###############################################################################
-# LOGIN PRINCIPAL COM INTERFACE PRO
-###############################################################################
-
 painel_login() {
   loading_bar
-  header_anim
-  login_caixa
+  print_header
   input_login
 
   echo -e "\033[1;36m⏳ Validando no servidor...\033[0m"
-  sleep 0.4
 
   ativar_servidor "$USER" "$PASS"
   if [ $? -ne 0 ]; then
@@ -198,10 +220,10 @@ while [ $tent -lt 3 ]; do
   echo -e "\033[1;33mTentativas restantes: $((3-tent))\033[0m"
 done
 
-[ $tent -ge 3 ] && {
-  echo -e "\033[1;31m❌ Falha ao autenticar.\033[0m"
+if [ $tent -ge 3 ]; then
+  echo -e "\033[1;31m❌ Falha ao autenticar. Saindo.\033[0m"
   exit 1
-}
+fi
 
 clear
 echo "✔ Painel carregado!"
