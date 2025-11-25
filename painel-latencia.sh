@@ -3,35 +3,15 @@ MODDIR=${0%/*}
 
 ###############################################################
 #                  🔐 LOGIN OBRIGATÓRIO SEMPRE
-#     Anti-Bruteforce + Bloqueio fora do Termux (PRO)
+#     Toda vez que abrir o painel no Termux, pede login
 ###############################################################
 
 MODDIR=${0%/*}
 SERVER="https://painel-licenca-server.onrender.com"
+LICENSE_FILE="$MODDIR/license_info"
+RESET_SCRIPT="$MODDIR/reset_auto.sh"
 
-# -----------------------------------------------------------
-# 🔒 1) BLOQUEIO SE NÃO FOR TERMUX
-# -----------------------------------------------------------
-if [ "$PREFIX" != "/data/data/com.termux/files/usr" ]; then
-    echo -e "\033[1;31m❌ Este painel só pode ser executado dentro do Termux.\033[0m"
-    exit 1
-fi
-
-# -----------------------------------------------------------
-# 🔒 2) SISTEMA DE DELAY ANTI-BRUTEFORCE
-# -----------------------------------------------------------
-anti_bruteforce() {
-    case "$1" in
-        1) sleep 2 ;;     # 1 erro → 2s
-        2) sleep 5 ;;     # 2 erros → 5s
-        3) sleep 10 ;;    # 3 erros → 10s
-        *) sleep 60 ;;    # 4+ erros → 60s (bloqueio temporário)
-    esac
-}
-
-# -----------------------------------------------------------
-# 🔑 Gera fingerprint única
-# -----------------------------------------------------------
+# ---- Gera fingerprint única ----
 gera_fingerprint() {
   ANDROID_ID=$(settings get secure android_id 2>/dev/null || echo "")
   SERIAL=$(getprop ro.serialno 2>/dev/null || echo "")
@@ -45,9 +25,101 @@ gera_fingerprint() {
   fi
 }
 
-# -----------------------------------------------------------
-# 🌐 Autenticação no servidor
-# -----------------------------------------------------------
+###############################################################
+#        ⏳ SISTEMA DE EXPIRAÇÃO + RESET AUTOMÁTICO
+#  Se a licença vencer, o painel reseta tudo e bloqueia acesso
+###############################################################
+
+reset_total_auto() {
+    echo "⚠ RESET AUTOMÁTICO — LICENÇA EXPIRADA" > /dev/kmsg
+
+    cat > "$RESET_SCRIPT" <<'EOF'
+#!/system/bin/sh
+# RESET COMPLETO AUTOMÁTICO DA LICENÇA
+
+# TOQUE
+settings delete secure tap_duration_threshold
+settings delete secure long_press_timeout
+settings delete secure multi_press_timeout
+settings delete secure accessibility_auto_action_delay
+
+# SISTEMA
+settings delete global block_untrusted_touches
+settings delete global restricted_device_performance
+
+# DISPLAY
+settings delete system peak_refresh_rate
+settings delete system min_refresh_rate
+settings delete global display_dual_output
+
+# GAMEPAD
+settings delete global gamepad.latency_reduction
+
+# USB / HID
+setprop vendor.usb.raw_input.enable 0
+setprop persist.usb.low_latency_mode 0
+setprop vendor.usb.hid.priority 0
+setprop persist.vendor.usb.high_speed 0
+setprop persist.vendor.usb.power 0
+setprop vendor.usb.hub.boost 0
+setprop vendor.usb.mouse.jitter_filter 0
+
+# MOUSE
+setprop persist.sys.mouse.linear_response 0
+setprop persist.sys.pointer.acceleration 1
+setprop persist.input.pointer_jitter_smoothing 0
+
+# INPUT
+setprop persist.sys.input.low_latency_mode 0
+setprop persist.sys.input.high_update_rate false
+setprop persist.sys.input.boost 0
+
+# GPU
+setprop debug.hwui.disable_vsync false
+setprop persist.sys.gpu.low_latency 0
+setprop persist.sys.gpu.frame_boost 0
+
+# DISPLAY
+setprop persist.sys.display.force_refresh 60
+setprop vendor.display.external_priority 0
+setprop persist.video.duplicate.display 0
+
+# FLAGS
+rm -rf "$MODDIR/disabled_flags"
+rm -f "$MODDIR/system.prop" "$MODDIR/spoof_enabled"
+rm -f "$MODDIR/original.props"
+
+# LICENÇA
+rm -f "$MODDIR/license_info"
+
+# REBOOT
+reboot
+EOF
+
+    chmod 755 "$RESET_SCRIPT"
+    sh "$RESET_SCRIPT"
+    exit 1
+}
+
+verifica_expiracao() {
+    if [ ! -f "$LICENSE_FILE" ]; then
+        return 0
+    fi
+
+    EXP=$(cat "$LICENSE_FILE")
+    NOW=$(date +%s)
+
+    if [ "$NOW" -ge "$EXP" ]; then
+        reset_total_auto
+    fi
+}
+
+# Executa verificação de expiração TODA VEZ que abrir o painel
+verifica_expiracao
+
+###############################################################
+# ---- Autenticação no servidor ----
+###############################################################
 ativar_servidor() {
   USER="$1"
   PASS="$2"
@@ -65,12 +137,19 @@ ativar_servidor() {
   fi
 
   echo -e "\033[1;32m✔ Login aprovado!\033[0m"
+
+  # ---- Salvar data de expiração retornada pelo servidor ----
+  EXP=$(echo "$RESP" | sed -n 's/.*"expires_at":\([0-9]*\).*/\1/p')
+  if [ ! -z "$EXP" ]; then
+    echo "$EXP" > "$MODDIR/license_info"
+  fi
+
   return 0
 }
 
-# -----------------------------------------------------------
-# 🧩 Painel de Login
-# -----------------------------------------------------------
+###############################################################
+# ---- Painel de Login ----
+###############################################################
 painel_login() {
   clear
   echo "======================================"
@@ -88,30 +167,21 @@ painel_login() {
   return $?
 }
 
-# -----------------------------------------------------------
-# 🔁 Validação de login com anti-bruteforce
-# -----------------------------------------------------------
+###############################################################
+# ---- Entrada obrigatória ----
+###############################################################
 tent=0
-while [ $tent -lt 5 ]; do
+while [ $tent -lt 3 ]; do
   painel_login
-  if [ $? -eq 0 ]; then
-      break
-  fi
-
+  [ $? -eq 0 ] && break
   tent=$((tent+1))
-  anti_bruteforce $tent
-
-  echo -e "\033[1;33mTentativas restantes: $((5-tent))\033[0m"
+  echo -e "\033[1;33mTentativas restantes: $((3-tent))\033[0m"
 done
 
-if [ $tent -ge 5 ]; then
-  echo -e "\033[1;31m❌ Muitas tentativas erradas. Bloqueado temporariamente.\033[0m"
+if [ $tent -ge 3 ]; then
+  echo -e "\033[1;31m❌ Falha ao autenticar. Saindo.\033[0m"
   exit 1
 fi
-
-###############################################################
-#   🔰 Depois daqui, continua o seu módulo normalmente...
-###############################################################
 
 # =====================================================
 #         🎮 FERA ALPHA – GAMING PERFORMANCE PANEL 🎮
@@ -1236,3 +1306,4 @@ if [ "$1" != "--ativar-todos" ]; then
 fi
 
 menu
+
