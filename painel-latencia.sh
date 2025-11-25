@@ -255,18 +255,24 @@ clear
 # 🔥 MENU CYBER COM EMOJIS (MODELO 7)
 ###############################################################################
 menu_inicio() {
-clear
-echo ""
-echo "┌──────────────────────────────────────────┐"
-echo "│        ⚡ FERA ALPHA SYSTEM ⚡            │"
-echo "└──────────────────────────────────────────┘"
-echo ""
-echo "   💠  [1] Login"
-echo "   🔄  [2] Verificar atualização"
-echo "   ❌  [0] Sair"
-echo ""
-echo -n "👉 Escolha uma opção: "
-read OP
+    clear
+
+    # Coleta informações do aparelho
+    DEVICE=$(getprop ro.product.model)
+    ANDROID=$(getprop ro.build.version.release)
+
+    echo ""
+    echo "⟪ PROJECT ALPHA ⚡ ⟫"
+    echo "───────────────────────────────"
+    echo "📱 Dispositivo: $DEVICE"
+    echo "🤖 Android: $ANDROID"
+    echo ""
+    echo "   💠  [1] Login"
+    echo "   🔄  [2] Verificar atualização"
+    echo "   ❌  [0] Sair"
+    echo ""
+    echo -n "👉 Escolha uma opção: "
+    read OP
 }
 
 while true; do
