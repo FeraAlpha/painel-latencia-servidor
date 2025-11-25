@@ -97,6 +97,13 @@
       "key": "FERA-12C214",
       "device_id": "2a5c2b5518d84c09f8221fc20c9542ce",
       "expires_at": 1766695583
+    },
+    {
+      "username": "ferax",
+      "password": "123",
+      "key": "FERA-0A46AE",
+      "device_id": null,
+      "expires_at": 1766698999
     }
   ]
 }
