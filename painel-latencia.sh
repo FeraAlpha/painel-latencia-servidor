@@ -67,7 +67,7 @@ verificar_update_manual() {
 }
 
 ###############################################################################
-# 🔐 LOGIN OBRIGATÓRIO SEMPRE (SEU CÓDIGO ORIGINAL)
+# 🔐 LOGIN OBRIGATÓRIO SEMPRE — (SEU ORIGINAL)
 ###############################################################################
 
 MODDIR=${0%/*}
@@ -93,9 +93,7 @@ echo "⚠ RESET AUTOMÁTICO — LICENÇA EXPIRADA" > /dev/kmsg
 
 cat > "$RESET_SCRIPT" <<'EOF'
 #!/system/bin/sh
-
-# RESET COMPLETO DA LICENÇA
-# (conteúdo original preservado)
+# RESET COMPLETO DA LICENÇA (INTEGRIDADE 100% MANTIDA)
 settings delete secure tap_duration_threshold
 settings delete secure long_press_timeout
 settings delete secure multi_press_timeout
@@ -125,12 +123,10 @@ setprop persist.sys.gpu.frame_boost 0
 setprop persist.sys.display.force_refresh 60
 setprop vendor.display.external_priority 0
 setprop persist.video.duplicate.display 0
-
 rm -rf "$MODDIR/disabled_flags"
 rm -f "$MODDIR/system.prop" "$MODDIR/spoof_enabled"
 rm -f "$MODDIR/original.props"
 rm -f "$MODDIR/license_info"
-
 reboot
 EOF
 
@@ -176,11 +172,12 @@ return 0
 }
 
 ###############################################################################
-# VISUAL ORIGINAL (ACELEREI O LOADING)
+# VISUAL — (Loading mais rápido)
 ###############################################################################
+
 loading_bar() {
 clear
-echo -e "\n\033[1;36mIniciando Painel FERA ALPHA...\033[0m\n"
+echo -e "\n\033[1;36mCarregando Painel FERA ALPHA...\033[0m\n"
 bar=""
 max=18
 i=1
@@ -255,20 +252,21 @@ clear
 }
 
 ###############################################################################
-# MENU PROFISSIONAL ANTES DO LOGIN (NOVO)
+# 🔥 MENU CYBER COM EMOJIS (MODELO 7)
 ###############################################################################
 menu_inicio() {
 clear
 echo ""
-echo "──────────────────────────────────────────────"
-echo "                  FERA ALPHA                  "
-echo "──────────────────────────────────────────────"
+echo "┌──────────────────────────────────────────┐"
+echo "│        ⚡ FERA ALPHA SYSTEM ⚡            │"
+echo "└──────────────────────────────────────────┘"
 echo ""
-echo "[1] Fazer login"
-echo "[2] Verificar atualização"
-echo "[0] Sair"
+echo "   💠  [1] Login"
+echo "   🔄  [2] Verificar atualização"
+echo "   ❌  [0] Sair"
 echo ""
-read -p "Escolha: " OP
+echo -n "👉 Escolha uma opção: "
+read OP
 }
 
 while true; do
@@ -277,12 +275,14 @@ case "$OP" in
 1) break ;;
 2) verificar_update_manual ;;
 0) exit ;;
+*) echo "Opção inválida"; sleep 1 ;;
 esac
 done
 
 ###############################################################################
-# TENTATIVAS (SEU ORIGINAL)
+# LOGIN (SEU ORIGINAL)
 ###############################################################################
+
 tent=0
 while [ $tent -lt 3 ]; do
 loading_bar
