@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
 
   "arquivos": {
     "painel-latencia.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh",
