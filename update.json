@@ -1,11 +1,11 @@
 {
   "version": "1.0.2",
-  
+
   "arquivos": {
     "painel-latencia.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh",
     "service.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/service.sh",
     "system.prop": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/system.prop"
   },
 
-  "changelog": "🔥 Sistema atualizado: spoof seguro, auto-update individual por arquivo, controle remoto total."
+  "changelog": "🔥 Spoof seguro + auto-update por arquivo + controle remoto."
 }
