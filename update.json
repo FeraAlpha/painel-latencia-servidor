@@ -1,7 +1,12 @@
 {
-  "version": "2.0",
-  "versionCode": 2,
-  "shUrl": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh",
-  "hashUrl": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/hash.txt",
-  "changelog": "Atualização automática do painel e spoof do Realme 15 Pro."
+  "version": "2.1",
+  
+  "spoof": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/spoof_on.prop",
+
+  "arquivos": {
+    "painel-latencia.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh",
+    "service.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/service.sh"
+  },
+
+  "changelog": "Atualização automática + controle de spoof remoto."
 }
