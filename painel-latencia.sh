@@ -68,7 +68,7 @@ verificar_update_manual() {
 }
 
 ###############################################################################
-# 🔐 LOGIN OBRIGATÓRIO
+# 🔐 LOGIN PROFISSIONAL + SENHA VISÍVEL
 ###############################################################################
 
 SERVER="https://painel-licenca-server.onrender.com"
@@ -91,9 +91,8 @@ gera_fingerprint() {
 reset_total_auto() {
     echo "⚠ RESET AUTOMÁTICO — LICENÇA EXPIRADA" > /dev/kmsg
 
-    cat > "$RESET_SCRIPT" <<'EOF'
+cat > "$RESET_SCRIPT" <<'EOF'
 #!/system/bin/sh
-# RESET COMPLETO DA LICENÇA (INTEGRIDADE 100% MANTIDA)
 settings delete secure tap_duration_threshold
 settings delete secure long_press_timeout
 settings delete secure multi_press_timeout
@@ -130,9 +129,9 @@ rm -f "$MODDIR/license_info"
 reboot
 EOF
 
-    chmod 755 "$RESET_SCRIPT"
-    sh "$RESET_SCRIPT"
-    exit 1
+chmod 755 "$RESET_SCRIPT"
+sh "$RESET_SCRIPT"
+exit 1
 }
 
 verifica_expiracao() {
@@ -169,6 +168,45 @@ ativar_servidor() {
     [ ! -z "$EXP" ] && echo "$EXP" > "$MODDIR/license_info"
 
     return 0
+}
+
+# ==================== VISUAL DO LOGIN ====================
+
+login_header() {
+    clear
+    cols=$(stty size | awk '{print $2}')
+    title="FERA ALPHA — LOGIN"
+    pad=$(( (cols - ${#title}) / 2 ))
+    printf "%${pad}s\033[1;36m%s\033[0m\n\n" "" "$title"
+}
+
+input_login() {
+    login_header
+
+    echo -e "\033[1;34m🧑 Usuário:\033[0m"
+    printf "➤ "
+    read USER
+
+    echo -e "\033[1;34m🔑 Senha (visível):\033[0m"
+    printf "➤ "
+    read PASS
+
+    echo ""
+}
+
+erro_login() {
+    echo -e "\033[1;31m"
+    echo "╔══════════════════════════════╗"
+    echo "║        ❌ ACESSO NEGADO       ║"
+    echo "╚══════════════════════════════╝"
+    echo -e "\033[0m"
+}
+
+bem_vindo() {
+    clear
+    echo -e "\033[1;32m✔ Login autorizado!\033[0m"
+    sleep 0.5
+    clear
 }
 
 ###############################################################################
@@ -493,51 +531,6 @@ submenu_spoof() {
 }
 
 # =====================================================
-# DESCRIÇÕES CURTAS
-# =====================================================
-DESC_1="- Reduz o tempo mínimo para reconhecer um toque e diminuir latência."
-DESC_2="- Ajusta o tempo para reconhecer toque longo (evita long press acidental)."
-DESC_3="- Diminui janela entre cliques múltiplos, melhora respostas rápidas."
-DESC_4="- Reduz atraso para ações automáticas de acessibilidade."
-DESC_5="- Desativa bloqueio de toques 'não confiáveis' (útil no espelhamento)."
-DESC_6="- Remove limites de desempenho do sistema (pode aumentar temperatura)."
-DESC_7="- Habilita raw input USB (eventos sem filtragem), melhora precisão."
-DESC_8="- Força modo USB de baixa latência (reduz buffers USB)."
-DESC_9="- Define prioridade HID para reduzir conflitos entre dispositivos."
-DESC_10="- Tenta forçar USB em high-speed (pode ajudar adaptadores)."
-DESC_11="- Aumenta energia declarada ao controlador USB (estabilidade de periféricos)."
-DESC_12="- Boost do driver de hub USB para estabilidade em setups complexos."
-DESC_13="- Filtro anti-jitter no mouse para reduzir micro-tremores."
-DESC_14="- Resposta linear do mouse (remove curvaturas/curvas de aceleração)."
-DESC_15="- Desativa aceleração do ponteiro (1:1 entre movimento e cursor)."
-DESC_16="- Suaviza jitter do ponteiro por software (reduz oscilações pequenas)."
-DESC_17="- Habilita modo de entrada de baixa latência (prioriza eventos)."
-DESC_18="- Ativa alta taxa de atualização de input (dependente do driver)."
-DESC_19="- Input boost para priorizar eventos em picos de uso."
-DESC_20="- Desativa VSync no HWUI (reduz input lag, pode causar tearing)."
-DESC_21="- Configura GPU para baixa latência (pode elevar consumo)."
-DESC_22="- Habilita frame boost na GPU (tenta manter FPS curtos mais altos)."
-DESC_23="- Mantém o display em 120Hz nativo (min/max 120Hz)."
-DESC_24="- Força 120Hz via propriedade (nem sempre funciona em todos OEMs)."
-DESC_25="- Ativa duplicação de vídeo para saída externa (espelhamento)."
-DESC_26="- Prioriza display externo em relação ao interno (útil em hubs)."
-DESC_27="- Habilita saída dual quando suportado pelo driver."
-DESC_28="- Reduz latência em gamepads (melhora a leitura de eventos)."
-DESC_29="- Força 'polling' mais rápido para dispositivos de interface humana (HID)."
-DESC_30="- Habilita o modo de ultra-polling persistente para entradas HID, reduzindo o atraso."
-DESC_31="- Ativa o caminho rápido ('fastpath') para eventos de entrada de dispositivos HID (melhora a taxa de eventos)."
-DESC_32="- Desativa qualquer filtro de software no sistema de input (recebe o input cru)."
-DESC_33="- Desativa o suavizamento de software para 'touchpad' ou ponteiro (para resposta 1:1)."
-DESC_34="- Desativa a reamostragem do sistema de input (usa a taxa de evento nativa)."
-DESC_35="- Desativa o filtro de 'dejitter' (redução de tremidos) para input, visando resposta máxima."
-DESC_36="- Coloca o controlador USB em modo de desempenho máximo (prioriza velocidade/taxa de transferência)."
-DESC_37="- Habilita interrupções de baixa latência no USB (reduz o tempo de espera para processar dados)."
-DESC_38="- Aumenta a largura de banda máxima permitida no barramento USB (evita gargalos)."
-DESC_39="- Prioriza o despacho rápido de eventos de input na fila do sistema."
-DESC_40="- Força o processamento imediato de eventos de input, minimizando atrasos."
-DESC_RESET="- Remove todas as chaves aplicadas e reinicia para aplicar mudanças."
-
-# =====================================================
 # SUBMENU GENÉRICO (ativa/desativa)
 # =====================================================
 submenu_tela() {
@@ -563,54 +556,54 @@ submenu_tela() {
 # =====================================================
 # Submenus (chamadas) — nomes exibidos em português
 # =====================================================
-submenu_1() { submenu_tela "Tempo mínimo do toque" "$DESC_1" "settings put secure tap_duration_threshold 70" "settings delete secure tap_duration_threshold"; }
-submenu_2() { submenu_tela "Tempo do toque longo" "$DESC_2" "settings put secure long_press_timeout 300" "settings delete secure long_press_timeout"; }
-submenu_3() { submenu_tela "Toques rápidos (duplo/triplo)" "$DESC_3" "settings put secure multi_press_timeout 130" "settings delete secure multi_press_timeout"; }
-submenu_4() { submenu_tela "Ações automáticas mais rápidas" "$DESC_4" "settings put secure accessibility_auto_action_delay 200" "settings delete secure accessibility_auto_action_delay"; }
-submenu_5() { submenu_tela "Permitir toques no espelhamento" "$DESC_5" "settings put global block_untrusted_touches 0" "settings delete global block_untrusted_touches"; }
-submenu_6() { submenu_tela "Desbloquear desempenho do sistema" "$DESC_6" "settings put global restricted_device_performance '0,0'" "settings delete global restricted_device_performance"; }
+submenu_1() { submenu_tela "Tempo mínimo do toque" "" "settings put secure tap_duration_threshold 70" "settings delete secure tap_duration_threshold"; }
+submenu_2() { submenu_tela "Tempo do toque longo" "" "settings put secure long_press_timeout 300" "settings delete secure long_press_timeout"; }
+submenu_3() { submenu_tela "Toques rápidos (duplo/triplo)" "" "settings put secure multi_press_timeout 130" "settings delete secure multi_press_timeout"; }
+submenu_4() { submenu_tela "Ações automáticas mais rápidas" "" "settings put secure accessibility_auto_action_delay 200" "settings delete secure accessibility_auto_action_delay"; }
+submenu_5() { submenu_tela "Permitir toques no espelhamento" "" "settings put global block_untrusted_touches 0" "settings delete global block_untrusted_touches"; }
+submenu_6() { submenu_tela "Desbloquear desempenho do sistema" "" "settings put global restricted_device_performance '0,0'" "settings delete global restricted_device_performance"; }
 
-submenu_7() { submenu_tela "Entrada USB sem filtro (RAW)" "$DESC_7" "setprop vendor.usb.raw_input.enable 1" "setprop vendor.usb.raw_input.enable 0"; }
-submenu_8() { submenu_tela "USB baixa latência" "$DESC_8" "setprop persist.usb.low_latency_mode 1" "setprop persist.usb.low_latency_mode 0"; }
-submenu_9() { submenu_tela "Prioridade HID" "$DESC_9" "setprop vendor.usb.hid.priority 2" "setprop vendor.usb.hid.priority 1"; }
-submenu_10() { submenu_tela "Modo High Speed USB" "$DESC_10" "setprop persist.vendor.usb.high_speed 1" "setprop persist.vendor.usb.high_speed 0"; }
-submenu_11() { submenu_tela "Potência USB aprimorada" "$DESC_11" "setprop persist.vendor.usb.power 1" "setprop persist.vendor.usb.power 0"; }
-submenu_12() { submenu_tela "Boost no hub USB" "$DESC_12" "setprop vendor.usb.hub.boost 1" "setprop vendor.usb.hub.boost 0"; }
-submenu_13() { submenu_tela "Anti-jitter USB (mouse)" "$DESC_13" "setprop vendor.usb.mouse.jitter_filter 1" "setprop vendor.usb.mouse.jitter_filter 0"; }
+submenu_7() { submenu_tela "Entrada USB sem filtro (RAW)" "" "setprop vendor.usb.raw_input.enable 1" "setprop vendor.usb.raw_input.enable 0"; }
+submenu_8() { submenu_tela "USB baixa latência" "" "setprop persist.usb.low_latency_mode 1" "setprop persist.usb.low_latency_mode 0"; }
+submenu_9() { submenu_tela "Prioridade HID" "" "setprop vendor.usb.hid.priority 2" "setprop vendor.usb.hid.priority 1"; }
+submenu_10() { submenu_tela "Modo High Speed USB" "" "setprop persist.vendor.usb.high_speed 1" "setprop persist.vendor.usb.high_speed 0"; }
+submenu_11() { submenu_tela "Potência USB aprimorada" "" "setprop persist.vendor.usb.power 1" "setprop persist.vendor.usb.power 0"; }
+submenu_12() { submenu_tela "Boost no hub USB" "" "setprop vendor.usb.hub.boost 1" "setprop vendor.usb.hub.boost 0"; }
+submenu_13() { submenu_tela "Anti-jitter USB (mouse)" "" "setprop vendor.usb.mouse.jitter_filter 1" "setprop vendor.usb.mouse.jitter_filter 0"; }
 
-submenu_14() { submenu_tela "Resposta linear do mouse (1:1)" "$DESC_14" "setprop persist.sys.mouse.linear_response 1" "setprop persist.sys.mouse.linear_response 0"; }
-submenu_15() { submenu_tela "Aceleração do mouse desligada" "$DESC_15" "setprop persist.sys.pointer.acceleration 0" "setprop persist.sys.pointer.acceleration 1"; }
-submenu_16() { submenu_tela "Anti-jitter do ponteiro" "$DESC_16" "setprop persist.input.pointer_jitter_smoothing 1" "setprop persist.input.pointer_jitter_smoothing 0"; }
+submenu_14() { submenu_tela "Resposta linear do mouse (1:1)" "" "setprop persist.sys.mouse.linear_response 1" "setprop persist.sys.mouse.linear_response 0"; }
+submenu_15() { submenu_tela "Aceleração do mouse desligada" "" "setprop persist.sys.pointer.acceleration 0" "setprop persist.sys.pointer.acceleration 1"; }
+submenu_16() { submenu_tela "Anti-jitter do ponteiro" "" "setprop persist.input.pointer_jitter_smoothing 1" "setprop persist.input.pointer_jitter_smoothing 0"; }
 
-submenu_17() { submenu_tela "Input: baixa latência" "$DESC_17" "setprop persist.sys.input.low_latency_mode 1" "setprop persist.sys.input.low_latency_mode 0"; }
-submenu_18() { submenu_tela "Input: alta taxa de atualização" "$DESC_18" "setprop persist.sys.input.high_update_rate true" "setprop persist.sys.input.high_update_rate false"; }
-submenu_19() { submenu_tela "Input Boost (priorizar eventos)" "$DESC_19" "setprop persist.sys.input.boost 1" "setprop persist.sys.input.boost 0"; }
+submenu_17() { submenu_tela "Input: baixa latência" "" "setprop persist.sys.input.low_latency_mode 1" "setprop persist.sys.input.low_latency_mode 0"; }
+submenu_18() { submenu_tela "Input: alta taxa de atualização" "" "setprop persist.sys.input.high_update_rate true" "setprop persist.sys.input.high_update_rate false"; }
+submenu_19() { submenu_tela "Input Boost (priorizar eventos)" "" "setprop persist.sys.input.boost 1" "setprop persist.sys.input.boost 0"; }
 
-submenu_20() { submenu_tela "VSync desligado" "$DESC_20" "setprop debug.hwui.disable_vsync true" "setprop debug.hwui.disable_vsync false"; }
-submenu_21() { submenu_tela "GPU: baixa latência" "$DESC_21" "setprop persist.sys.gpu.low_latency 1" "setprop persist.sys.gpu.low_latency 0"; }
-submenu_22() { submenu_tela "GPU: aceleração de quadros" "$DESC_22" "setprop persist.sys.gpu.frame_boost 1" "setprop persist.sys.gpu.frame_boost 0"; }
+submenu_20() { submenu_tela "VSync desligado" "" "setprop debug.hwui.disable_vsync true" "setprop debug.hwui.disable_vsync false"; }
+submenu_21() { submenu_tela "GPU: baixa latência" "" "setprop persist.sys.gpu.low_latency 1" "setprop persist.sys.gpu.low_latency 0"; }
+submenu_22() { submenu_tela "GPU: aceleração de quadros" "" "setprop persist.sys.gpu.frame_boost 1" "setprop persist.sys.gpu.frame_boost 0"; }
 
-submenu_23() { submenu_tela "Tela interna 120Hz (fixo)" "$DESC_23" "settings put system peak_refresh_rate 120; settings put system min_refresh_rate 120" "settings delete system peak_refresh_rate; settings delete system min_refresh_rate"; }
-submenu_24() { submenu_tela "Forçar 120Hz no display" "$DESC_24" "setprop persist.sys.display.force_refresh 120" "setprop persist.sys.display.force_refresh 60"; }
-submenu_25() { submenu_tela "Duplicação (espelhamento) externa" "$DESC_25" "setprop persist.video.duplicate.display 1" "setprop persist.video.duplicate.display 0"; }
-submenu_26() { submenu_tela "Prioridade de vídeo externa" "$DESC_26" "setprop vendor.display.external_priority 1" "setprop vendor.display.external_priority 0"; }
-submenu_27() { submenu_tela "Saída dupla de vídeo" "$DESC_27" "settings put global display_dual_output 1" "settings delete global display_dual_output"; }
+submenu_23() { submenu_tela "Tela interna 120Hz (fixo)" "" "settings put system peak_refresh_rate 120; settings put system min_refresh_rate 120" "settings delete system peak_refresh_rate; settings delete system min_refresh_rate"; }
+submenu_24() { submenu_tela "Forçar 120Hz no display" "" "setprop persist.sys.display.force_refresh 120" "setprop persist.sys.display.force_refresh 60"; }
+submenu_25() { submenu_tela "Duplicação (espelhamento) externa" "" "setprop persist.video.duplicate.display 1" "setprop persist.video.duplicate.display 0"; }
+submenu_26() { submenu_tela "Prioridade de vídeo externa" "" "setprop vendor.display.external_priority 1" "setprop vendor.display.external_priority 0"; }
+submenu_27() { submenu_tela "Saída dupla de vídeo" "" "settings put global display_dual_output 1" "settings delete global display_dual_output"; }
 
-submenu_28() { submenu_tela "Gamepad: baixa latência" "$DESC_28" "settings put global gamepad.latency_reduction 1" "settings delete global gamepad.latency_reduction"; }
+submenu_28() { submenu_tela "Gamepad: baixa latência" "" "settings put global gamepad.latency_reduction 1" "settings delete global gamepad.latency_reduction"; }
 
 # NOVOS TWEAKS ADICIONADOS (29–40)
-submenu_29() { submenu_tela "Polling rápido HID" "$DESC_29" "setprop persist.sys.hid.busy_polling 1" "setprop persist.sys.hid.busy_polling 0"; }
-submenu_30() { submenu_tela "Ultra Polling HID" "$DESC_30" "setprop persist.vendor.hid.ultra_polling 1" "setprop persist.vendor.hid.ultra_polling 0"; }
-submenu_31() { submenu_tela "Fastpath HID (rota direta)" "$DESC_31" "setprop vendor.hid.input.fastpath 1" "setprop vendor.hid.input.fastpath 0"; }
-submenu_32() { submenu_tela "Filtro de input: desligado" "$DESC_32" "setprop persist.sys.input.filter 0" "setprop persist.sys.input.filter 1"; }
-submenu_33() { submenu_tela "Suavização do touchpad: desligada" "$DESC_33" "setprop persist.sys.touchpad.smooth 0" "setprop persist.sys.touchpad.smooth 1"; }
-submenu_34() { submenu_tela "Reamostragem de input: desligada" "$DESC_34" "setprop persist.sys.input.resample 0" "setprop persist.sys.input.resample 1"; }
-submenu_35() { submenu_tela "Dejitter de input: desligado" "$DESC_35" "setprop persist.sys.input.dejitter 0" "setprop persist.sys.input.dejitter 1"; }
-submenu_36() { submenu_tela "Modo desempenho USB" "$DESC_36" "setprop vendor.usb.performance_mode 1" "setprop vendor.usb.performance_mode 0"; }
-submenu_37() { submenu_tela "Interrupções USB baixa latência" "$DESC_37" "setprop persist.vendor.usb.low_latency_interrupts 1" "setprop persist.vendor.usb.low_latency_interrupts 0"; }
-submenu_38() { submenu_tela "Máxima largura de banda USB" "$DESC_38" "setprop vendor.usb.max_bus_bandwidth 1" "setprop vendor.usb.max_bus_bandwidth 0"; }
-submenu_39() { submenu_tela "Despacho rápido de input" "$DESC_39" "setprop persist.sys.input.dispatch_fast 1" "setprop persist.sys.input.dispatch_fast 0"; }
-submenu_40() { submenu_tela "Despacho imediato de input" "$DESC_40" "setprop persist.sys.input.dispatch_immediate 1" "setprop persist.sys.input.dispatch_immediate 0"; }
+submenu_29() { submenu_tela "Polling rápido HID" "" "setprop persist.sys.hid.busy_polling 1" "setprop persist.sys.hid.busy_polling 0"; }
+submenu_30() { submenu_tela "Ultra Polling HID" "" "setprop persist.vendor.hid.ultra_polling 1" "setprop persist.vendor.hid.ultra_polling 0"; }
+submenu_31() { submenu_tela "Fastpath HID (rota direta)" "" "setprop vendor.hid.input.fastpath 1" "setprop vendor.hid.input.fastpath 0"; }
+submenu_32() { submenu_tela "Filtro de input: desligado" "" "setprop persist.sys.input.filter 0" "setprop persist.sys.input.filter 1"; }
+submenu_33() { submenu_tela "Suavização do touchpad: desligada" "" "setprop persist.sys.touchpad.smooth 0" "setprop persist.sys.touchpad.smooth 1"; }
+submenu_34() { submenu_tela "Reamostragem de input: desligada" "" "setprop persist.sys.input.resample 0" "setprop persist.sys.input.resample 1"; }
+submenu_35() { submenu_tela "Dejitter de input: desligado" "" "setprop persist.sys.input.dejitter 0" "setprop persist.sys.input.dejitter 1"; }
+submenu_36() { submenu_tela "Modo desempenho USB" "" "setprop vendor.usb.performance_mode 1" "setprop vendor.usb.performance_mode 0"; }
+submenu_37() { submenu_tela "Interrupções USB baixa latência" "" "setprop persist.vendor.usb.low_latency_interrupts 1" "setprop persist.vendor.usb.low_latency_interrupts 0"; }
+submenu_38() { submenu_tela "Máxima largura de banda USB" "" "setprop vendor.usb.max_bus_bandwidth 1" "setprop vendor.usb.max_bus_bandwidth 0"; }
+submenu_39() { submenu_tela "Despacho rápido de input" "" "setprop persist.sys.input.dispatch_fast 1" "setprop persist.sys.input.dispatch_fast 0"; }
+submenu_40() { submenu_tela "Despacho imediato de input" "" "setprop persist.sys.input.dispatch_immediate 1" "setprop persist.sys.input.dispatch_immediate 0"; }
 
 # Reset (41) - Renomeado para submenu_reset
 submenu_reset() {
