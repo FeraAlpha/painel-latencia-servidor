@@ -105,7 +105,7 @@ setprop persist.vendor.usb.high_speed 0
 setprop persist.vendor.usb.power 0
 setprop vendor.usb.hub.boost 0
 setprop vendor.usb.mouse.jitter_filter 0
-setprop persist.sys.mouse.linear_response 0
+setprop persist.sys.mouse.linear_response 1
 setprop persist.sys.pointer.acceleration 1
 setprop persist.input.pointer_jitter_smoothing 0
 setprop persist.sys.input.low_latency_mode 0
@@ -121,6 +121,9 @@ rm -rf "$MODDIR/disabled_flags"
 rm -f "$MODDIR/system.prop" "$MODDIR/spoof_enabled"
 rm -f "$MODDIR/original.props"
 rm -f "$MODDIR/license_info"
+# Restaurar flag e lista de touchscreen (se existirem)
+setprop persist.fera.touch.disabled 0
+rm -f "$MODDIR/touch_disabled_list"
 reboot
 EOF
 
@@ -251,8 +254,18 @@ mkdir -p "$FLAG_DIR" 2>/dev/null
 # =====================================================
 # GERENCIAMENTO CENTRALIZADO DE PROPS (Para persistência no Magisk)
 # =====================================================
-rebuild_system_prop() {
+
+# Nota: corrigido para separar SPOOF das entradas de TWEAKS.
+# Funções novas:
+#  - rebuild_spoof_only: escreve somente props do spoof
+#  - append_tweaks_props: escreve somente os tweaks (se não desativados)
+#  - rebuild_system_prop: chama as duas, mantendo compatibilidade com chamadas anteriores
+
+# Função que cria/atualiza apenas as props do SPOOF
+rebuild_spoof_only() {
+    # remove antigo e inicia novo
     rm -f "$SPOOF_FILE" 2>/dev/null
+    touch "$SPOOF_FILE" 2>/dev/null
 
     if [ -f "$SPOOF_FLAG" ]; then
         echo -e "\n# Spoof Realme 15 Pro\n" >> "$SPOOF_FILE"
@@ -265,6 +278,15 @@ ro.product.manufacturer=realme
 EOF
     fi
 
+    chmod 644 "$SPOOF_FILE" 2>/dev/null
+}
+
+# Função que adiciona TWEAKS (somente se não estiverem desativados via FLAG_DIR)
+append_tweaks_props() {
+    # assegura que o arquivo existe (reaproveita SPOOF_FILE)
+    touch "$SPOOF_FILE" 2>/dev/null
+
+    # adiciona cabeçalho apenas se houver algo para adicionar
     echo -e "\n# Tweaks de Propriedades Ativos\n" >> "$SPOOF_FILE"
 
     TWEAK_PROPS=(
@@ -307,17 +329,26 @@ EOF
 
         # Se a flag de desativação NÃO existir, adiciona ao arquivo
         if [ ! -f "$FLAG_DIR/$NOME" ]; then
-            echo "$PROP_VAL" >> "$SPOOF_FILE"
-
+            # evita duplicar a mesma linha (substitui se já existir)
             prop_key=$(echo "$PROP_VAL" | cut -d'=' -f1)
-            prop_value=$(echo "$PROP_VAL" | cut -d'=' -f2)
-            setprop "$prop_key" "$prop_value" 2>/dev/null
+            # remove linha antiga se existir
+            if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
+                sed -i "s|^${prop_key}=.*|${PROP_VAL}|" "$SPOOF_FILE" 2>/dev/null || true
+            else
+                echo "$PROP_VAL" >> "$SPOOF_FILE"
+            fi
+            # aplica via setprop para efeito imediato
+            setprop "$prop_key" "$(echo "$PROP_VAL" | cut -d'=' -f2)" 2>/dev/null
         fi
     done
 
-    if [ -f "$SPOOF_FILE" ]; then
-        chmod 644 "$SPOOF_FILE" 2>/dev/null
-    fi
+    chmod 644 "$SPOOF_FILE" 2>/dev/null
+}
+
+# Função compat para chamadas externas: recria spoof + tweaks (usada por --ativar-todos e hodgers)
+rebuild_system_prop() {
+    rebuild_spoof_only
+    append_tweaks_props
 }
 
 # ====== Helpers para manipular system.prop incrementalmente ======
@@ -449,7 +480,9 @@ enable_spoof() {
     fi
 
     touch "$SPOOF_FLAG"
-    rebuild_system_prop
+    # Importante: agora chamamos SOMENTE rebuild_spoof_only para evitar
+    # que o spoof ative tweaks automaticamente.
+    rebuild_spoof_only
 
     echo -e "${GREEN}✔ Spoof Realme 15 Pro ativado.${RESET}"
     echo -e "${YELLOW}Obs: Algumas mudanças de prop só aplicam após reboot de apps/sistema.${RESET}"
@@ -457,7 +490,8 @@ enable_spoof() {
 
 disable_spoof() {
     rm -f "$SPOOF_FLAG"
-    rebuild_system_prop
+    # atualiza apenas as props de spoof (remove a seção de spoof do arquivo)
+    rebuild_spoof_only
 
     echo -e "${GREEN}✔ Spoof desativado — sistema voltará aos valores originais (ou após reboot).${RESET}"
 }
@@ -498,10 +532,6 @@ submenu_spoof() {
     done
 }
 
-# =====================================================
-# NOVA FUNÇÃO: TOGGLE UNIVERSAL (usada pelo menu individual)
-# =====================================================
-# Recebe: nome, on_command, off_command
 toggle_tweak() {
     nome="$1"; on_cmd="$2"; off_cmd="$3"
 
@@ -559,8 +589,10 @@ submenu_tela() {
 }
 
 # =====================================================
-# Submenus (chamadas) — comandos usados pelo toggle
+# SUBMENUS (chamadas) — comandos usados pelo toggle
+# (definições mantidas idênticas ao seu script original)
 # =====================================================
+
 submenu_1_cmd_on="settings put secure tap_duration_threshold 70"
 submenu_1_cmd_off="settings delete secure tap_duration_threshold"
 submenu_2_cmd_on="settings put secure long_press_timeout 300"
@@ -611,7 +643,7 @@ submenu_22_cmd_on="setprop persist.sys.gpu.frame_boost 1"
 submenu_22_cmd_off="setprop persist.sys.gpu.frame_boost 0"
 
 submenu_23_cmd_on="settings put system peak_refresh_rate 120; settings put system min_refresh_rate 120"
-submenu_23_cmd_off="settings delete system peak_refresh_rate; settings delete system min_refresh_rate"
+submenu_23_cmd_off="settings delete system peak_refresh_rate; settings delete system.min_refresh_rate"
 submenu_24_cmd_on="setprop persist.sys.display.force_refresh 120"
 submenu_24_cmd_off="setprop persist.sys.display.force_refresh 60"
 submenu_25_cmd_on="setprop persist.video.duplicate.display 1"
@@ -697,9 +729,6 @@ submenu_reset() {
     reboot
 }
 
-# =====================================================
-# NOVA FUNÇÃO: REINICIAR (REBOOT)
-# =====================================================
 submenu_reboot() {
     clear
     printf '\033c'
@@ -835,6 +864,9 @@ menu_individual() {
         fi
         printf " %b 42) Ativar / Desativar Spoof 120 FPS (Realme 15 Pro)\n" "$SPOOF_ICON"
 
+        # ===> ADICIONADO: Touchscreen toggle (item 43)
+        printf " %b 43) Desativar/Ativar Touchscreen\n" "$(icon check_prop persist.fera.touch.disabled 1)"
+
         echo -e "\n 0) Voltar\n"
         read_prompt "> " item
 
@@ -881,6 +913,8 @@ menu_individual() {
             40) toggle_tweak "Despacho imediato de input" "$submenu_40_cmd_on" "$submenu_40_cmd_off" ;;
             41) submenu_reset ;;
             42) submenu_spoof ;;
+            # ===> ADICIONADO: case para Touchscreen toggle
+            43) toggle_touchscreen ;;
             0) return ;;
             *) echo -e "${RED}Opção inválida...${RESET}"; sleep 1 ;;
         esac
@@ -913,10 +947,238 @@ menu_categoria_toque() {
     done
 }
 
-# (rest of menus remain the same — interface intact)
+menu_categoria_usb() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}--- USB / HID ---${RESET}\n"
+        printf " %b 7) Entrada USB sem filtro (RAW)\n" "$(icon check_prop vendor.usb.raw_input.enable 1)"
+        printf " %b 8) USB baixa latência\n" "$(icon check_prop persist.usb.low_latency_mode 1)"
+        printf " %b 9) Prioridade HID\n" "$(icon check_prop vendor.usb.hid.priority 2)"
+        printf " %b 10) Modo High Speed USB\n" "$(icon check_prop persist.vendor.usb.high_speed 1)"
+        printf " %b 11) Potência USB aprimorada\n" "$(icon check_prop persist.vendor.usb.power 1)"
+        printf " %b 12) Boost no hub USB\n" "$(icon check_prop vendor.usb.hub.boost 1)"
+        printf " %b 13) Anti-jitter USB (mouse)\n" "$(icon check_prop vendor.usb.mouse.jitter_filter 1)"
+        echo -e "\n0) Voltar\n"
+        read_prompt "> " op
+        case "$op" in
+            7) toggle_tweak "Entrada USB sem filtro (RAW)" "$submenu_7_cmd_on" "$submenu_7_cmd_off" ;;
+            8) toggle_tweak "USB baixa latência" "$submenu_8_cmd_on" "$submenu_8_cmd_off" ;;
+            9) toggle_tweak "Prioridade HID" "$submenu_9_cmd_on" "$submenu_9_cmd_off" ;;
+            10) toggle_tweak "Modo High Speed USB" "$submenu_10_cmd_on" "$submenu_10_cmd_off" ;;
+            11) toggle_tweak "Potência USB aprimorada" "$submenu_11_cmd_on" "$submenu_11_cmd_off" ;;
+            12) toggle_tweak "Boost no hub USB" "$submenu_12_cmd_on" "$submenu_12_cmd_off" ;;
+            13) toggle_tweak "Anti-jitter USB (mouse)" "$submenu_13_cmd_on" "$submenu_13_cmd_off" ;;
+            0) return ;;
+            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+        esac
+    done
+}
 
 # =====================================================
-# MENU PRINCIPAL (SEM AUTOMAÇÃO DE BOOT)
+# NOVAS FUNÇÕES: TOUCHSCREEN (disable / enable / toggle)
+# =====================================================
+touchscreen_disable() {
+    # remove lista antiga se houver
+    rm -f "$MODDIR/touch_disabled_list" 2>/dev/null
+    touch "$MODDIR/touch_disabled_list" 2>/dev/null
+
+    # percorre event devices e desabilita os que parecem ser touchscreen
+    for dev in /dev/input/event*; do
+        name=$(getevent -lp "$dev" 2>/dev/null | grep -i "touch" | head -n 1)
+        if [ -n "$name" ]; then
+            chmod 000 "$dev" 2>/dev/null || true
+            echo "$dev" >> "$MODDIR/touch_disabled_list"
+        fi
+    done
+
+    # marca flag persistente para manter desativado após reboot
+    setprop persist.fera.touch.disabled 1
+}
+
+touchscreen_enable() {
+    # Se houver lista de dispositivos, restaura permissões padrão
+    if [ -f "$MODDIR/touch_disabled_list" ]; then
+        while read dev; do
+            [ -e "$dev" ] && chmod 660 "$dev" 2>/dev/null || true
+        done < "$MODDIR/touch_disabled_list"
+        rm -f "$MODDIR/touch_disabled_list" 2>/dev/null
+    else
+        # fallback: tenta restaurar permissões a todos event* que contenham "touch"
+        for dev in /dev/input/event*; do
+            name=$(getevent -lp "$dev" 2>/dev/null | grep -i "touch" | head -n 1)
+            if [ -n "$name" ]; then
+                chmod 660 "$dev" 2>/dev/null || true
+            fi
+        done
+    fi
+
+    setprop persist.fera.touch.disabled 0
+}
+
+toggle_touchscreen() {
+    if getprop persist.fera.touch.disabled | grep -q "1"; then
+        echo -e "${CYAN}${ARROW} Ativando touchscreen...${RESET}"
+        touchscreen_enable
+        echo -e "${GREEN}✔ Touchscreen ativado${RESET}"
+    else
+        echo -e "${CYAN}${ARROW} Desativando touchscreen...${RESET}"
+        touchscreen_disable
+        echo -e "${RED}✔ Touchscreen desativado${RESET}"
+    fi
+    sleep 0.3
+}
+
+# =====================================================
+# MENU CATEGORIA: MOUSE / PONTEIRO
+# =====================================================
+menu_categoria_mouse() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}--- MOUSE / PONTEIRO ---${RESET}\n"
+        printf " %b 14) Resposta linear do mouse (1:1)\n" "$(icon check_prop persist.sys.mouse.linear_response 1)"
+        ACEL=$(getprop persist.sys.pointer.acceleration 2>/dev/null)
+        [ "$ACEL" = "0" ] && AC_ICON="${GREEN}${ICON_ON}${RESET}" || AC_ICON="${RED}${ICON_OFF}${RESET}"
+        printf " %b 15) Aceleração do mouse desligada\n" "$AC_ICON"
+        printf " %b 16) Anti-jitter do ponteiro\n" "$(icon check_prop persist.input.pointer_jitter_smoothing 1)"
+        echo -e "\n0) Voltar\n"
+        read_prompt "> " op
+        case "$op" in
+            14) toggle_tweak "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on" "$submenu_14_cmd_off" ;;
+            15) toggle_tweak "Aceleração do mouse desligada" "$submenu_15_cmd_on" "$submenu_15_cmd_off" ;;
+            16) toggle_tweak "Anti-jitter do ponteiro" "$submenu_16_cmd_on" "$submenu_16_cmd_off" ;;
+            0) return ;;
+            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+        esac
+    done
+}
+
+# =====================================================
+# MENU CATEGORIA INPUT
+# =====================================================
+menu_categoria_input() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}--- INPUT ---${RESET}\n"
+        printf " %b 17) Input baixa latência\n" "$(icon check_prop persist.sys.input.low_latency_mode 1)"
+        printf " %b 18) Input alta taxa de atualização\n" "$(icon check_prop persist.sys.input.high_update_rate true)"
+        printf " %b 19) Input Boost\n" "$(icon check_prop persist.sys.input.boost 1)"
+        printf " %b 32) Filtro de input: desligado\n" "$(icon check_prop persist.sys.input.filter 0)"
+        printf " %b 34) Reamostragem desligada\n" "$(icon check_prop persist.sys.input.resample 0)"
+        printf " %b 35) Dejitter desligado\n" "$(icon check_prop persist.sys.input.dejitter 0)"
+        printf " %b 39) Despacho rápido de input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
+        printf " %b 40) Despacho imediato de input\n" "$(icon check_prop persist.sys.input.dispatch_immediate 1)"
+        echo -e "\n0) Voltar\n"
+        read_prompt "> " op
+        case "$op" in
+            17) toggle_tweak "Input baixa latência" "$submenu_17_cmd_on" "$submenu_17_cmd_off" ;;
+            18) toggle_tweak "Input alta taxa de atualização" "$submenu_18_cmd_on" "$submenu_18_cmd_off" ;;
+            19) toggle_tweak "Input Boost" "$submenu_19_cmd_on" "$submenu_19_cmd_off" ;;
+            32) toggle_tweak "Filtro input" "$submenu_32_cmd_on" "$submenu_32_cmd_off" ;;
+            34) toggle_tweak "Reamostragem" "$submenu_34_cmd_on" "$submenu_34_cmd_off" ;;
+            35) toggle_tweak "Dejitter" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
+            39) toggle_tweak "Despacho rápido de input" "$submenu_39_cmd_on" "$submenu_39_cmd_off" ;;
+            40) toggle_tweak "Despacho imediato de input" "$submenu_40_cmd_on" "$submenu_40_cmd_off" ;;
+            0) return ;;
+            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+        esac
+    done
+}
+
+# =====================================================
+# MENU CATEGORIA GPU
+# =====================================================
+menu_categoria_gpu() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}--- GPU ---${RESET}\n"
+        printf " %b 20) VSync desligado\n" "$(icon check_prop debug.hwui.disable_vsync true)"
+        printf " %b 21) GPU baixa latência\n" "$(icon check_prop persist.sys.gpu.low_latency 1)"
+        printf " %b 22) GPU aceleração de quadros\n" "$(icon check_prop persist.sys.gpu.frame_boost 1)"
+        echo -e "\n0) Voltar\n"
+        read_prompt "> " op
+        case "$op" in
+            20) toggle_tweak "VSync Off" "$submenu_20_cmd_on" "$submenu_20_cmd_off" ;;
+            21) toggle_tweak "GPU baixa latência" "$submenu_21_cmd_on" "$submenu_21_cmd_off" ;;
+            22) toggle_tweak "GPU aceleração quadros" "$submenu_22_cmd_on" "$submenu_22_cmd_off" ;;
+            0) return ;;
+            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+        esac
+    done
+}
+
+# =====================================================
+# MENU CATEGORIA DISPLAY
+# =====================================================
+menu_categoria_display() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}--- DISPLAY ---${RESET}\n"
+        printf " %b 23) Tela interna 120Hz\n" "$(icon check_setting system peak_refresh_rate 120)"
+        printf " %b 24) Forçar 120Hz\n" "$(icon check_prop persist.sys.display.force_refresh 120)"
+        printf " %b 25) Duplicação externa\n" "$(icon check_prop persist.video.duplicate.display 1)"
+        printf " %b 26) Prioridade externa\n" "$(icon check_prop vendor.display.external_priority 1)"
+        printf " %b 27) Saída dupla\n" "$(icon check_setting global display_dual_output 1)"
+        echo -e "\n0) Voltar\n"
+        read_prompt "> " op
+        case "$op" in
+            23) toggle_tweak "Tela interna 120Hz" "$submenu_23_cmd_on" "$submenu_23_cmd_off" ;;
+            24) toggle_tweak "Forçar 120Hz Display" "$submenu_24_cmd_on" "$submenu_24_cmd_off" ;;
+            25) toggle_tweak "Duplicação externa" "$submenu_25_cmd_on" "$submenu_25_cmd_off" ;;
+            26) toggle_tweak "Prioridade externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
+            27) toggle_tweak "Saída dupla" "$submenu_27_cmd_on" "$submenu_27_cmd_off" ;;
+            0) return ;;
+            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+        esac
+    done
+}
+
+# =====================================================
+# MENU CATEGORIA GAMEPAD
+# =====================================================
+menu_categoria_gamepad() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}--- GAMEPAD ---${RESET}\n"
+        printf " %b 28) Gamepad baixa latência\n" "$(icon check_setting global gamepad.latency_reduction 1)"
+        echo -e "\n0) Voltar\n"
+        read_prompt "> " op
+        case "$op" in
+            28) toggle_tweak "Gamepad baixa latência" "$submenu_28_cmd_on" "$submenu_28_cmd_off" ;;
+            0) return ;;
+            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+        esac
+    done
+}
+
+# =====================================================
+# MENU MISC (Reset / Boot)
+# =====================================================
+menu_misc() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}--- UTILIDADES ---${RESET}\n"
+        echo "1) 🔄 Reset geral"
+        echo "2) 🔁 Reiniciar dispositivo"
+        echo "0) Voltar"
+        read_prompt "> " op
+        case "$op" in
+            1) submenu_reset ;;
+            2) submenu_reboot ;;
+            0) return ;;
+            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+        esac
+    done
+}
+
+# =====================================================
+# MENU PRINCIPAL
 # =====================================================
 menu() {
     while true; do
@@ -931,8 +1193,8 @@ menu() {
         echo "[1] 🟢 Aplicar todos os tweaks"
         echo "[2] 🔧 Ajustes individuais (Mais Completo)"
         echo "[3] 🎭 Spoof 120 FPS (Realme 15 Pro)"
-        echo "[4] ⚙️ Categorias rápidas (Toque / USB / Input / GPU / Display, etc.)"
-        echo "[5] 🔄 Reiniciar o Dispositivo (Reboot)"
+        echo "[4] ⚙️ Categorias rápidas"
+        echo "[5] 🔄 Reiniciar o Dispositivo"
         echo
         echo "[0] ❌ Sair"
         echo
@@ -943,43 +1205,44 @@ menu() {
             2) menu_individual ;;
             3) submenu_spoof ;;
             4)
-               while true; do
-                   clear
-                   printf '\033c'
-                   echo -e "${BOLD}${CYAN}--- CATEGORIAS RÁPIDAS ---${RESET}\n"
-                   echo "1) Toque"
-                   echo "2) USB/HID (Latency)"
-                   echo "3) Mouse/Ponteiro"
-                   echo "4) Input (Despacho de Eventos)"
-                   echo "5) GPU"
-                   echo "6) Display"
-                   echo "7) Gamepad"
-                   echo "8) Utilidades (Reset/Boot)"
-                   echo "0) Voltar"
-                   read_prompt "> " catop
-                   case "$catop" in
-                       1) menu_categoria_toque ;;
-                       2) menu_categoria_usb ;;
-                       3) menu_categoria_mouse ;;
-                       4) menu_categoria_input ;;
-                       5) menu_categoria_gpu ;;
-                       6) menu_categoria_display ;;
-                       7) menu_categoria_gamepad ;;
-                       8) menu_misc ;;
-                       0) break ;;
-                       *) echo -e "${RED}Opção inválida${RESET}"; sleep 1 ;;
-                   esac
-               done
-            ;;
+                while true; do
+                    clear
+                    printf '\033c'
+                    echo -e "${BOLD}${CYAN}--- CATEGORIAS RÁPIDAS ---${RESET}\n"
+                    echo "1) Toque"
+                    echo "2) USB/HID (Latency)"
+                    echo "3) Mouse/Ponteiro"
+                    echo "4) Input"
+                    echo "5) GPU"
+                    echo "6) Display"
+                    echo "7) Gamepad"
+                    echo "8) Utilidades"
+                    echo "0) Voltar"
+                    read_prompt "> " catop
+                    case "$catop" in
+                        1) menu_categoria_toque ;;
+                        2) menu_categoria_usb ;;
+                        3) menu_categoria_mouse ;;
+                        4) menu_categoria_input ;;
+                        5) menu_categoria_gpu ;;
+                        6) menu_categoria_display ;;
+                        7) menu_categoria_gamepad ;;
+                        8) menu_misc ;;
+                        0) break ;;
+                        *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+                    esac
+                done
+                ;;
             5) submenu_reboot ;;
             0) exit 0 ;;
-            *) echo -e "${RED}Opção inválida${RESET}"; sleep 1 ;;
+            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
         esac
     done
 }
 
-# ===================== INÍCIO DO FLUXO: LOGIN E ABERTURA DO MENU =====================
-# Tentativas de login (3)
+# =====================================================
+# FLUXO DE LOGIN
+# =====================================================
 tent=0
 while [ $tent -lt 3 ]; do
     loading_bar
@@ -987,11 +1250,10 @@ while [ $tent -lt 3 ]; do
     input_login
 
     echo -e "\033[1;36m⏳ Validando no servidor...\033[0m"
-
     ativar_servidor "$USER" "$PASS"
+
     if [ $? -eq 0 ]; then
         bem_vindo
-        # Após login válido, só entra no menu principal
         menu
         break
     fi
@@ -1007,5 +1269,4 @@ if [ $tent -ge 3 ]; then
     exit 1
 fi
 
-# Fim do script
 exit 0
