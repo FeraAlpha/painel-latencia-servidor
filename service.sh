@@ -1,20 +1,40 @@
 #!/system/bin/sh
 MODDIR=${0%/*}
+SPOOF_FILE="$MODDIR/system.prop"
 
-# Delay para garantir que todos os drivers foram carregados
-sleep 4
+sleep 3
 
-# Reaplica spoof e props persistentes
-if [ -f "$MODDIR/system.prop" ]; then
-    resetprop -F -n "$MODDIR/system.prop"
+# ==============================
+# 1. Aplicar as props salvas no system.prop
+# ==============================
+if [ -f "$SPOOF_FILE" ]; then
+    while IFS= read -r line; do
+        clean=$(echo "$line" | sed 's/[[:space:]]//g')
+        [ -z "$clean" ] && continue
+        echo "$clean" | grep -q "^#" && continue
+        echo "$clean" | grep -q "=" || continue
+
+        key=$(echo "$clean" | cut -d= -f1)
+        value=$(echo "$clean" | cut -d= -f2-)
+        [ -n "$key" ] && [ -n "$value" ] && setprop "$key" "$value"
+    done < "$SPOOF_FILE"
 fi
 
-# Se o touchscreen foi desativado pelo painel
+# ==============================
+# 2. Restaurar estado do touchscreen
+# ==============================
 if getprop persist.fera.touch.disabled | grep -q "1"; then
+    # DESATIVAR touchscreen
     for dev in /dev/input/event*; do
-        name=$(getevent -lp "$dev" 2>/dev/null | grep -i "touch" | head -n 1)
-        if [ -n "$name" ]; then
-            chmod 000 "$dev"
+        if getevent -lp "$dev" 2>/dev/null | grep -qi "touch"; then
+            chmod 000 "$dev" 2>/dev/null
+        fi
+    done
+else
+    # ATIVAR touchscreen
+    for dev in /dev/input/event*; do
+        if getevent -lp "$dev" 2>/dev/null | grep -qi "touch"; then
+            chmod 660 "$dev" 2>/dev/null
         fi
     done
 fi
