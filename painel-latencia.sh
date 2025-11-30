@@ -976,48 +976,45 @@ menu_categoria_usb() {
 }
 
 # =====================================================
-# NOVAS FUNÇÕES: TOUCHSCREEN (disable / enable / toggle)
+# NOVA VERSÃO – Touchscreen (isolado e sem interferência)
+# Substitui bloco anterior para evitar alterar permissões de /dev/input/event*
 # =====================================================
+
+# Arquivo que guarda apenas a flag (não gera props conflitantes)
+TOUCH_FLAG="$MODDIR/touch.disabled"
+KEYLAYOUT_DIR="$MODDIR/system/usr/keylayout"
+KEYLAYOUT_FILE="$KEYLAYOUT_DIR/touchscreen.kl"
+
 touchscreen_disable() {
-    # remove lista antiga se houver
-    rm -f "$MODDIR/touch_disabled_list" 2>/dev/null
-    touch "$MODDIR/touch_disabled_list" 2>/dev/null
+    # marca flag persistente local (arquivo)
+    echo "1" > "$TOUCH_FLAG" 2>/dev/null
 
-    # percorre event devices e desabilita os que parecem ser touchscreen
-    for dev in /dev/input/event*; do
-        name=$(getevent -lp "$dev" 2>/dev/null | grep -i "touch" | head -n 1)
-        if [ -n "$name" ]; then
-            chmod 000 "$dev" 2>/dev/null || true
-            echo "$dev" >> "$MODDIR/touch_disabled_list"
-        fi
-    done
+    # Cria keylayout substituto no diretório do módulo (não no /system real)
+    mkdir -p "$KEYLAYOUT_DIR" 2>/dev/null
+    cat > "$KEYLAYOUT_FILE" <<'EOF'
+# Touchscreen bloqueado pelo Fera Alpha
+# Arquivo de placeholder para neutralizar eventos via keylayout
+key 330   WAKE
+EOF
+    # Ajuste de permissões seguro
+    chmod 644 "$KEYLAYOUT_FILE" 2>/dev/null
 
-    # marca flag persistente para manter desativado após reboot
-    setprop persist.fera.touch.disabled 1
+    # Trigger leve: prop apenas para sinalizar reload interno (não conflita com outros)
+    setprop persist.fera.touch.reload 1 2>/dev/null
 }
 
 touchscreen_enable() {
-    # Se houver lista de dispositivos, restaura permissões padrão
-    if [ -f "$MODDIR/touch_disabled_list" ]; then
-        while read dev; do
-            [ -e "$dev" ] && chmod 660 "$dev" 2>/dev/null || true
-        done < "$MODDIR/touch_disabled_list"
-        rm -f "$MODDIR/touch_disabled_list" 2>/dev/null
-    else
-        # fallback: tenta restaurar permissões a todos event* que contenham "touch"
-        for dev in /dev/input/event*; do
-            name=$(getevent -lp "$dev" 2>/dev/null | grep -i "touch" | head -n 1)
-            if [ -n "$name" ]; then
-                chmod 660 "$dev" 2>/dev/null || true
-            fi
-        done
-    fi
+    # Remove flag e arquivo criado
+    rm -f "$TOUCH_FLAG" 2>/dev/null
+    rm -f "$KEYLAYOUT_FILE" 2>/dev/null
 
-    setprop persist.fera.touch.disabled 0
+    # Trigger leve para sinalizar restauração
+    setprop persist.fera.touch.reload 0 2>/dev/null
 }
 
 toggle_touchscreen() {
-    if getprop persist.fera.touch.disabled | grep -q "1"; then
+    # Mantém comportamento de toggle original (mesmo UX)
+    if [ -f "$TOUCH_FLAG" ]; then
         echo -e "${CYAN}${ARROW} Ativando touchscreen...${RESET}"
         touchscreen_enable
         echo -e "${GREEN}✔ Touchscreen ativado${RESET}"
@@ -1028,6 +1025,16 @@ toggle_touchscreen() {
     fi
     sleep 0.3
 }
+
+# =====================================================
+# CONTINUAÇÃO DO SCRIPT ORIGINAL (menus restantes)
+# =====================================================
+
+# =====================================================
+# NOVAS FUNÇÕES: TOUCHSCREEN (disable / enable / toggle)
+# =====================================================
+# -- Observação: entradas antigas foram substituídas pela versão segura acima.
+# -- A chamada toggle_touchscreen segue a mesma assinatura para compatibilidade.
 
 # =====================================================
 # MENU CATEGORIA: MOUSE / PONTEIRO
