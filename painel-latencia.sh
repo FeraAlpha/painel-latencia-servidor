@@ -1,65 +1,57 @@
 #!/system/bin/sh
 
 ###############################################################################
-# 🔄 VERIFICAÇÃO DE UPDATE (MANUAL)
+# ⚡ AUTO UPDATE - VERSÃO AUTOMÁTICA
 ###############################################################################
 MODDIR=${0%/*}
-PAINEL_URL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh?$(date +%s)"
-HASH_URL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/hash.txt?$(date +%s)"
+PAINEL_URL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh"
+HASH_URL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/hash.txt"
 SELF="$0"
 LOCAL_HASH="/data/local/tmp/painel_hash"
 TMP_DL="/data/local/tmp/painel_new.sh"
 
-[ ! -f "$LOCAL_HASH" ] && echo "0" > "$LOCAL_HASH"
+# Configuração de auto-update
+AUTO_UPDATE_FILE="$MODDIR/auto_update_enabled"
+[ ! -f "$AUTO_UPDATE_FILE" ] && echo "1" > "$AUTO_UPDATE_FILE"
 
-verificar_update_manual() {
-    clear
-    echo ""
-    echo "──────────────────────────────────────────────"
-    echo "        FERA ALPHA — Verificar Atualização    "
-    echo "──────────────────────────────────────────────"
-    echo ""
-    echo "🔍 Verificando servidor..."
-
-    LOCAL=$(cat "$LOCAL_HASH")
-    REMOTO=$(curl -fsSL "$HASH_URL" | sed 's/[^0-9a-fA-F]//g')
-
-    if [ -z "$REMOTO" ]; then
-        echo "⚠ Não foi possível verificar atualização."
-        return
+auto_update_check() {
+    if [ ! -f "$AUTO_UPDATE_FILE" ] || [ "$(cat "$AUTO_UPDATE_FILE")" != "1" ]; then
+        return 0
     fi
-
-    if [ "$LOCAL" = "$REMOTO" ]; then
-        echo "✔ Já está na versão mais recente."
-        return
+    
+    echo -e "\n🔍 Verificando atualizações automaticamente..."
+    
+    LOCAL=$(cat "$LOCAL_HASH" 2>/dev/null || echo "0")
+    REMOTO=$(curl -fsSL "${HASH_URL}?$(date +%s)" | sed 's/[^0-9a-fA-F]//g')
+    
+    if [ -z "$REMOTO" ] || [ "$LOCAL" = "$REMOTO" ]; then
+        return 0
     fi
-
-    echo "🔄 Nova versão detectada! Baixando..."
-
-    curl -fsSL "$PAINEL_URL" -o "$TMP_DL"
-
+    
+    echo "🔄 Nova versão disponível! Atualizando..."
+    
+    curl -fsSL "${PAINEL_URL}?$(date +%s)" -o "$TMP_DL"
+    
     if [ ! -s "$TMP_DL" ]; then
-        echo "❌ Falha no download."
-        return
+        return 1
     fi
-
+    
     NEW_HASH=$(sha256sum "$TMP_DL" | awk '{print $1}')
     if [ "$NEW_HASH" != "$REMOTO" ]; then
-        echo "❌ Hash incorreto. Atualização cancelada."
-        return
+        return 1
     fi
-
+    
     cp -f "$TMP_DL" "$SELF"
     chmod 755 "$SELF"
     echo "$REMOTO" > "$LOCAL_HASH"
-
-    clear
-    echo "✔ Painel atualizado com sucesso!"
-    echo ""
-    echo "Reabra usando:"
-    echo "sh $SELF"
-    exit
+    
+    echo -e "✅ Atualização concluída! Reiniciando painel...\n"
+    sleep 2
+    exec "$SELF"
 }
+
+# Verificar atualização ao iniciar
+auto_update_check
 
 ###############################################################################
 # 🔐 LOGIN OBRIGATÓRIO
@@ -121,7 +113,7 @@ rm -rf "$MODDIR/disabled_flags"
 rm -f "$MODDIR/system.prop" "$MODDIR/spoof_enabled"
 rm -f "$MODDIR/original.props"
 rm -f "$MODDIR/license_info"
-# Restaurar flag e lista de touchscreen (se existirem)
+# Restaurar flag de touchscreen removida
 setprop persist.fera.touch.disabled 0
 rm -f "$MODDIR/touch_disabled_list"
 reboot
@@ -169,13 +161,245 @@ ativar_servidor() {
 }
 
 ###############################################################################
-# VISUAL — (Loading mais rápido)
+# 🛡️ VERIFICAÇÃO INICIAL
+###############################################################################
+
+verificacao_inicial() {
+    clear
+    echo ""
+    echo "──────────────────────────────────────────────"
+    echo "        FERA ALPHA — Verificações Iniciais    "
+    echo "──────────────────────────────────────────────"
+    echo ""
+    
+    # Verificar Spoof
+    echo "🔍 Verificando configurações de spoof..."
+    if [ -f "$SPOOF_FLAG" ] || ( [ -f "$SPOOF_FILE" ] && grep -q "ro.product.model=RMX5101" "$SPOOF_FILE" 2>/dev/null ); then
+        echo -e "\033[1;31m⚠️  SPOOF ATIVO DETECTADO!\033[0m"
+        echo -e "\033[1;33mO spoof do Realme 15 Pro está ativo.\033[0m"
+        echo -e "\033[1;33mIsso pode impedir o login correto.\033[0m"
+        echo ""
+        
+        echo -e "\033[1;36m📝 O que deseja fazer?\033[0m"
+        echo "1) Continuar para login (pode falhar)"
+        echo "2) Desativar spoof e continuar"
+        echo "3) Verificar atualizações primeiro"
+        echo "4) Sair"
+        echo ""
+        
+        while true; do
+            read_prompt "> " escolha
+            
+            case "$escolha" in
+                1)
+                    echo -e "\033[1;33m⚠️  Continuando com spoof ativo...\033[0m"
+                    echo -e "\033[1;31mSe o login falhar, desative o spoof.\033[0m"
+                    sleep 2
+                    return 1
+                    ;;
+                2)
+                    echo -e "\033[1;36m🔄 Desativando spoof...\033[0m"
+                    rm -f "$SPOOF_FLAG" 2>/dev/null
+                    
+                    # Restaurar props originais
+                    if [ -f "$ORIG_STORE" ]; then
+                        while IFS='=' read -r prop value; do
+                            [ -n "$prop" ] && [ "$prop" != "" ] && setprop "$prop" "$value" 2>/dev/null
+                        done < "$ORIG_STORE"
+                    fi
+                    
+                    # Rebuild para remover spoof do system.prop
+                    rebuild_spoof_only
+                    
+                    echo -e "\033[1;32m✅ Spoof desativado!\033[0m"
+                    sleep 2
+                    return 0
+                    ;;
+                3)
+                    echo -e "\033[1;36m🔄 Verificando atualizações...\033[0m"
+                    verificar_update_manual
+                    echo ""
+                    echo -e "\033[1;33mPressione ENTER para voltar às opções...\033[0m"
+                    read -r _
+                    clear
+                    echo ""
+                    echo "──────────────────────────────────────────────"
+                    echo "        FERA ALPHA — Verificações Iniciais    "
+                    echo "──────────────────────────────────────────────"
+                    echo ""
+                    echo -e "\033[1;31m⚠️  SPOOF ATIVO DETECTADO!\033[0m"
+                    echo -e "\033[1;33mO spoof do Realme 15 Pro está ativo.\033[0m"
+                    echo -e "\033[1;33mIsso pode impedir o login correto.\033[0m"
+                    echo ""
+                    echo -e "\033[1;36m📝 O que deseja fazer?\033[0m"
+                    echo "1) Continuar para login (pode falhar)"
+                    echo "2) Desativar spoof e continuar"
+                    echo "3) Verificar atualizações primeiro"
+                    echo "4) Sair"
+                    echo ""
+                    ;;
+                4)
+                    echo -e "\033[1;36m👋 Saindo...\033[0m"
+                    exit 1
+                    ;;
+                *)
+                    echo -e "\033[1;31m❌ Opção inválida. Tente 1, 2, 3 ou 4.\033[0m"
+                    ;;
+            esac
+        done
+    else
+        echo -e "\033[1;32m✅ Spoof não está ativo\033[0m"
+        echo ""
+        return 0
+    fi
+}
+
+###############################################################################
+# 🧹 LIMPEZA DE CACHE AVANÇADA
+###############################################################################
+
+limpar_cache_avancado() {
+    clear
+    echo -e "${BOLD}${CYAN}=== LIMPEZA DE CACHE AVANÇADA ===${RESET}\n"
+    
+    echo -e "${YELLOW}Escolha o tipo de limpeza:${RESET}"
+    echo "1) 📦 Cache de apps (padrão)"
+    echo "2) 🗑️  Cache total do sistema (1000G)"
+    echo "3) 🎯 Cache de dalvik"
+    echo "4) 🔍 Cache específico de apps"
+    echo "0) Voltar"
+    echo ""
+    
+    read_prompt "> " opcao_cache
+    
+    case "$opcao_cache" in
+        1)
+            echo -e "\n${CYAN}Limpando cache de apps...${RESET}"
+            pm trim-caches 0
+            echo -e "${GREEN}✅ Cache de apps limpo!${RESET}"
+            ;;
+        2)
+            echo -e "\n${CYAN}Limpando cache TOTAL do sistema (1000G)...${RESET}"
+            pm trim-caches 1000G
+            echo -e "${GREEN}✅ Cache total limpo!${RESET}"
+            ;;
+        3)
+            echo -e "\n${CYAN}Limpando cache dalvik...${RESET}"
+            rm -rf /data/dalvik-cache/* 2>/dev/null
+            echo -e "${GREEN}✅ Cache dalvik limpo!${RESET}"
+            ;;
+        4)
+            echo -e "\n${CYAN}Limpando cache de apps específicos...${RESET}"
+            echo -e "${YELLOW}Digite o nome do pacote do app (ex: com.whatsapp):${RESET}"
+            echo "ou deixe em branco para cancelar"
+            read_prompt "> " app_package
+            
+            if [ -n "$app_package" ]; then
+                echo -e "\n${CYAN}Limpando cache de $app_package...${RESET}"
+                pm clear "$app_package"
+                echo -e "${GREEN}✅ Cache de $app_package limpo!${RESET}"
+            fi
+            ;;
+        0)
+            return
+            ;;
+        *)
+            echo -e "${RED}Opção inválida!${RESET}"
+            ;;
+    esac
+    
+    # Mostrar espaço liberado
+    echo ""
+    df -h /data | tail -1 | awk '{print "📊 Espaço livre em /data: " $4}'
+    
+    press_enter
+}
+
+###############################################################################
+# ⚙️ CONFIGURAÇÕES DE ATUALIZAÇÃO AUTOMÁTICA
+###############################################################################
+
+menu_config_update() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}=== CONFIGURAÇÕES DE ATUALIZAÇÃO ===${RESET}\n"
+        
+        if [ -f "$AUTO_UPDATE_FILE" ] && [ "$(cat "$AUTO_UPDATE_FILE")" = "1" ]; then
+            echo -e "Status: ${GREEN}✅ ATUALIZAÇÃO AUTOMÁTICA ATIVADA${RESET}\n"
+        else
+            echo -e "Status: ${RED}❌ ATUALIZAÇÃO AUTOMÁTICA DESATIVADA${RESET}\n"
+        fi
+        
+        echo "1) Ativar atualização automática"
+        echo "2) Desativar atualização automática"
+        echo "3) Verificar atualização agora"
+        echo "0) Voltar"
+        echo ""
+        
+        read_prompt "> " opcao_update
+        
+        case "$opcao_update" in
+            1)
+                echo "1" > "$AUTO_UPDATE_FILE"
+                echo -e "${GREEN}✅ Atualização automática ativada!${RESET}"
+                sleep 1
+                ;;
+            2)
+                echo "0" > "$AUTO_UPDATE_FILE"
+                echo -e "${YELLOW}⚠️  Atualização automática desativada${RESET}"
+                sleep 1
+                ;;
+            3)
+                echo -e "\n${CYAN}Verificando atualização...${RESET}"
+                LOCAL=$(cat "$LOCAL_HASH" 2>/dev/null || echo "0")
+                REMOTO=$(curl -fsSL "${HASH_URL}?$(date +%s)" | sed 's/[^0-9a-fA-F]//g')
+                
+                if [ -z "$REMOTO" ]; then
+                    echo -e "${RED}❌ Não foi possível conectar ao servidor${RESET}"
+                elif [ "$LOCAL" = "$REMOTO" ]; then
+                    echo -e "${GREEN}✅ Você já tem a versão mais recente!${RESET}"
+                else
+                    echo -e "${YELLOW}🔄 Nova versão disponível!${RESET}"
+                    echo "Deseja atualizar agora? (s/n)"
+                    read_prompt "> " resposta
+                    
+                    if [ "$resposta" = "s" ] || [ "$resposta" = "S" ]; then
+                        curl -fsSL "${PAINEL_URL}?$(date +%s)" -o "$TMP_DL"
+                        
+                        if [ ! -s "$TMP_DL" ]; then
+                            echo -e "${RED}❌ Falha no download${RESET}"
+                        else
+                            cp -f "$TMP_DL" "$SELF"
+                            chmod 755 "$SELF"
+                            echo "$REMOTO" > "$LOCAL_HASH"
+                            echo -e "${GREEN}✅ Atualização concluída!${RESET}"
+                            echo -e "\nReiniciando painel..."
+                            sleep 2
+                            exec "$SELF"
+                        fi
+                    fi
+                fi
+                press_enter
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Opção inválida!${RESET}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+###############################################################################
+# VISUAL
 ###############################################################################
 
 loading_bar() {
     clear
     echo -e "\n\033[1;36mCarregando Painel FERA ALPHA...\033[0m\n"
-    # bar simplificado (sem loop)
     printf "\033[1;32m[██████████████████] 100%%\033[0m\n"
     return
 }
@@ -188,7 +412,6 @@ print_header() {
     t2="LOGIN"
     line=$(printf "%${#t1}s" | tr " " "=")
 
-    # header sem animação (mais rápido e visual igual)
     pad=$(( (cols - ( ${#line} + 2 + ${#t1} + 2 + ${#line} )) / 2 ))
     printf "%${pad}s"
     echo -e "\033[1;34m$line  $t1  $line\033[0m"
@@ -221,15 +444,20 @@ erro_login() {
 bem_vindo() {
     clear
     echo -e "\033[1;32m✔ Login autorizado!\033[0m"
+    
+    # Verificar atualização após login (se auto-update estiver ativo)
+    if [ -f "$AUTO_UPDATE_FILE" ] && [ "$(cat "$AUTO_UPDATE_FILE")" = "1" ]; then
+        echo -e "\n${CYAN}🔄 Verificando atualizações...${RESET}"
+        auto_update_check
+    fi
+    
+    sleep 1
     clear
 }
 
 ###############################################################################
 # ===================== INÍCIO DO PAINEL (UNIFICADO) ==========================
-# =============================================================================
-# 🎮 FERA ALPHA – GAMING PERFORMANCE PANEL (tudo abaixo é o painel que você
-# forneceu; reorganizado para usar a mesma MODDIR e sem duplicações)
-# =============================================================================
+###############################################################################
 
 # ====== Cores ANSI ======
 RED="\033[1;31m"
@@ -251,19 +479,14 @@ ORIG_STORE="$MODDIR/original.props"
 FLAG_DIR="$MODDIR/disabled_flags"
 mkdir -p "$FLAG_DIR" 2>/dev/null
 
+# Arquivo para armazenar tweaks ativos
+ENABLED_TWEAKS_FILE="$MODDIR/enabled_tweaks.txt"
+
 # =====================================================
-# GERENCIAMENTO CENTRALIZADO DE PROPS (Para persistência no Magisk)
+# GERENCIAMENTO CENTRALIZADO DE PROPS
 # =====================================================
 
-# Nota: corrigido para separar SPOOF das entradas de TWEAKS.
-# Funções novas:
-#  - rebuild_spoof_only: escreve somente props do spoof
-#  - append_tweaks_props: escreve somente os tweaks (se não desativados)
-#  - rebuild_system_prop: chama as duas, mantendo compatibilidade com chamadas anteriores
-
-# Função que cria/atualiza apenas as props do SPOOF
 rebuild_spoof_only() {
-    # remove antigo e inicia novo
     rm -f "$SPOOF_FILE" 2>/dev/null
     touch "$SPOOF_FILE" 2>/dev/null
 
@@ -281,12 +504,8 @@ EOF
     chmod 644 "$SPOOF_FILE" 2>/dev/null
 }
 
-# Função que adiciona TWEAKS (somente se não estiverem desativados via FLAG_DIR)
 append_tweaks_props() {
-    # assegura que o arquivo existe (reaproveita SPOOF_FILE)
     touch "$SPOOF_FILE" 2>/dev/null
-
-    # adiciona cabeçalho apenas se houver algo para adicionar
     echo -e "\n# Tweaks de Propriedades Ativos\n" >> "$SPOOF_FILE"
 
     TWEAK_PROPS=(
@@ -327,17 +546,13 @@ append_tweaks_props() {
         NOME=$(echo "$TWEAK" | cut -d'=' -f1)
         PROP_VAL=$(echo "$TWEAK" | cut -d'=' -f2-)
 
-        # Se a flag de desativação NÃO existir, adiciona ao arquivo
         if [ ! -f "$FLAG_DIR/$NOME" ]; then
-            # evita duplicar a mesma linha (substitui se já existir)
             prop_key=$(echo "$PROP_VAL" | cut -d'=' -f1)
-            # remove linha antiga se existir
             if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
                 sed -i "s|^${prop_key}=.*|${PROP_VAL}|" "$SPOOF_FILE" 2>/dev/null || true
             else
                 echo "$PROP_VAL" >> "$SPOOF_FILE"
             fi
-            # aplica via setprop para efeito imediato
             setprop "$prop_key" "$(echo "$PROP_VAL" | cut -d'=' -f2)" 2>/dev/null
         fi
     done
@@ -345,21 +560,16 @@ append_tweaks_props() {
     chmod 644 "$SPOOF_FILE" 2>/dev/null
 }
 
-# Função compat para chamadas externas: recria spoof + tweaks (usada por --ativar-todos e hodgers)
 rebuild_system_prop() {
     rebuild_spoof_only
     append_tweaks_props
 }
 
-# ====== Helpers para manipular system.prop incrementalmente ======
-# adiciona linha prop_key=prop_value se não existir
 add_prop_line() {
     prop_key="$1"
     prop_value="$2"
     if [ -z "$prop_key" ]; then return; fi
-    # cria arquivo se não existir
     touch "$SPOOF_FILE" 2>/dev/null
-    # se já tem, substitui; caso contrário adiciona
     if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
         sed -i "s|^${prop_key}=.*|${prop_key}=${prop_value}|" "$SPOOF_FILE" 2>/dev/null || true
     else
@@ -368,7 +578,6 @@ add_prop_line() {
     chmod 644 "$SPOOF_FILE" 2>/dev/null
 }
 
-# remove linha com prop_key
 remove_prop_line() {
     prop_key="$1"
     [ -f "$SPOOF_FILE" ] || return
@@ -388,18 +597,19 @@ ativar_tweak() {
 
     rm -f "$FLAG"
 
+    # Adicionar ao arquivo de tweaks ativos
+    if ! grep -q "^$nome$" "$ENABLED_TWEAKS_FILE" 2>/dev/null; then
+        echo "$nome" >> "$ENABLED_TWEAKS_FILE"
+    fi
+
     if echo "$cmd" | grep -qE "^settings"; then
-        # settings put namespace key value
         eval "$cmd"
     elif echo "$cmd" | grep -qE "^setprop"; then
-        # setprop key value
         prop_key=$(echo "$cmd" | awk '{print $2}')
         prop_value=$(echo "$cmd" | awk '{print $3}')
         [ -n "$prop_key" ] && setprop "$prop_key" "$prop_value" 2>/dev/null
-        # atualiza system.prop apenas para esta prop (incremental)
         add_prop_line "$prop_key" "$prop_value"
     else
-        # outros comandos (exec)
         eval "$cmd"
     fi
 
@@ -413,16 +623,17 @@ desativar_tweak() {
 
     touch "$FLAG"
 
+    # Remover do arquivo de tweaks ativos
+    if [ -f "$ENABLED_TWEAKS_FILE" ]; then
+        sed -i "/^$nome$/d" "$ENABLED_TWEAKS_FILE"
+    fi
+
     if echo "$cmd" | grep -qE "^settings"; then
-        # off command expected is like "settings delete namespace key"
         eval "$cmd"
     elif echo "$cmd" | grep -qE "^setprop"; then
-        # off command might be "setprop key 0" or "setprop key false" or explicit default
         prop_key=$(echo "$cmd" | awk '{print $2}')
         prop_value=$(echo "$cmd" | awk '{print $3}')
-        # apply default/off value
         [ -n "$prop_key" ] && setprop "$prop_key" "$prop_value" 2>/dev/null
-        # remove from system.prop persistence
         remove_prop_line "$prop_key"
     else
         eval "$cmd"
@@ -431,7 +642,7 @@ desativar_tweak() {
     echo -e "${RED}✔ Desativado: $nome${RESET}"
 }
 
-# ====== Checagens inteligentes (settings/getprop) ======
+# ====== Checagens inteligentes ======
 check_setting() {
     ns="$1"; key="$2"; exp="$3"
     val=$(settings get "$ns" "$key" 2>/dev/null)
@@ -461,6 +672,71 @@ check_prop() {
 icon() { if "$@"; then printf "${GREEN}${ICON_ON}${RESET}"; else printf "${RED}${ICON_OFF}${RESET}"; fi; }
 
 # =====================================================
+# Mapeamento de tweaks para comandos
+# =====================================================
+map_tweak_to_cmd() {
+    case "$1" in
+        "Tempo mínimo do toque") echo "$submenu_1_cmd_on" ;;
+        "Tempo do toque longo") echo "$submenu_2_cmd_on" ;;
+        "Toques rápidos (duplo/triplo)") echo "$submenu_3_cmd_on" ;;
+        "Ações automáticas mais rápidas") echo "$submenu_4_cmd_on" ;;
+        "Permitir toques no espelhamento") echo "$submenu_5_cmd_on" ;;
+        "Desbloquear desempenho do sistema") echo "$submenu_6_cmd_on" ;;
+        "Entrada USB sem filtro (RAW)") echo "$submenu_7_cmd_on" ;;
+        "USB baixa latência") echo "$submenu_8_cmd_on" ;;
+        "Prioridade HID") echo "$submenu_9_cmd_on" ;;
+        "Modo High Speed USB") echo "$submenu_10_cmd_on" ;;
+        "Potência USB aprimorada") echo "$submenu_11_cmd_on" ;;
+        "Boost no hub USB") echo "$submenu_12_cmd_on" ;;
+        "Anti-jitter USB (mouse)") echo "$submenu_13_cmd_on" ;;
+        "Resposta linear do mouse (1:1)") echo "$submenu_14_cmd_on" ;;
+        "Aceleração do mouse desligada") echo "$submenu_15_cmd_on" ;;
+        "Anti-jitter do ponteiro") echo "$submenu_16_cmd_on" ;;
+        "Input: baixa latência") echo "$submenu_17_cmd_on" ;;
+        "Input: alta taxa de atualização") echo "$submenu_18_cmd_on" ;;
+        "Input Boost (priorizar eventos)") echo "$submenu_19_cmd_on" ;;
+        "VSync desligado") echo "$submenu_20_cmd_on" ;;
+        "GPU: baixa latência") echo "$submenu_21_cmd_on" ;;
+        "GPU: aceleração de quadros") echo "$submenu_22_cmd_on" ;;
+        "Tela interna 120Hz (fixo)") echo "$submenu_23_cmd_on" ;;
+        "Forçar 120Hz no display") echo "$submenu_24_cmd_on" ;;
+        "Duplicação (espelhamento) externa") echo "$submenu_25_cmd_on" ;;
+        "Prioridade de vídeo externa") echo "$submenu_26_cmd_on" ;;
+        "Saída dupla de vídeo") echo "$submenu_27_cmd_on" ;;
+        "Gamepad: baixa latência") echo "$submenu_28_cmd_on" ;;
+        "Polling rápido HID") echo "$submenu_29_cmd_on" ;;
+        "Ultra Polling HID") echo "$submenu_30_cmd_on" ;;
+        "Fastpath HID (rota direta)") echo "$submenu_31_cmd_on" ;;
+        "Filtro de input: desligado") echo "$submenu_32_cmd_on" ;;
+        "Suavização do touchpad: desligada") echo "$submenu_33_cmd_on" ;;
+        "Reamostragem de input: desligada") echo "$submenu_34_cmd_on" ;;
+        "Dejitter de input: desligado") echo "$submenu_35_cmd_on" ;;
+        "Modo desempenho USB") echo "$submenu_36_cmd_on" ;;
+        "Interrupções USB baixa latência") echo "$submenu_37_cmd_on" ;;
+        "Máxima largura de banda USB") echo "$submenu_38_cmd_on" ;;
+        "Despacho rápido de input") echo "$submenu_39_cmd_on" ;;
+        "Despacho imediato de input") echo "$submenu_40_cmd_on" ;;
+        *) echo "" ;;
+    esac
+}
+
+# =====================================================
+# Aplicar tweaks ativos no boot
+# =====================================================
+apply_enabled_tweaks_from_file() {
+    if [ ! -f "$ENABLED_TWEAKS_FILE" ]; then
+        return
+    fi
+
+    while IFS= read -r nome; do
+        cmd=$(map_tweak_to_cmd "$nome")
+        if [ -n "$cmd" ]; then
+            eval "$cmd"
+        fi
+    done < "$ENABLED_TWEAKS_FILE"
+}
+
+# =====================================================
 # Funções de Spoof Realme 15 Pro
 # =====================================================
 save_original_props() {
@@ -480,8 +756,6 @@ enable_spoof() {
     fi
 
     touch "$SPOOF_FLAG"
-    # Importante: agora chamamos SOMENTE rebuild_spoof_only para evitar
-    # que o spoof ative tweaks automaticamente.
     rebuild_spoof_only
 
     echo -e "${GREEN}✔ Spoof Realme 15 Pro ativado.${RESET}"
@@ -490,7 +764,6 @@ enable_spoof() {
 
 disable_spoof() {
     rm -f "$SPOOF_FLAG"
-    # atualiza apenas as props de spoof (remove a seção de spoof do arquivo)
     rebuild_spoof_only
 
     echo -e "${GREEN}✔ Spoof desativado — sistema voltará aos valores originais (ou após reboot).${RESET}"
@@ -535,14 +808,11 @@ submenu_spoof() {
 toggle_tweak() {
     nome="$1"; on_cmd="$2"; off_cmd="$3"
 
-    # Detecta tipo (settings / setprop)
     if echo "$on_cmd" | grep -qE "^settings"; then
-        # campos: settings put <ns> <key> <value>
         ns=$(echo "$on_cmd" | awk '{print $3}')
         key=$(echo "$on_cmd" | awk '{print $4}')
         val=$(echo "$on_cmd" | awk '{print $5}')
         if check_setting "$ns" "$key" "$val"; then
-            # está ativo -> desativa (executa off_cmd)
             desativar_tweak "$nome" "$off_cmd"
         else
             ativar_tweak "$nome" "$on_cmd"
@@ -556,41 +826,13 @@ toggle_tweak() {
             ativar_tweak "$nome" "$on_cmd"
         fi
     else
-        # default: try on/off detection via string compare (fallback)
-        # if on_cmd equals off_cmd? just run on_cmd
         ativar_tweak "$nome" "$on_cmd"
     fi
-    # pequeno delay para feedback visual consistente
     sleep 0.15
 }
 
 # =====================================================
-# SUBMENU GENÉRICO (remains but we will use toggle in main)
-# =====================================================
-submenu_tela() {
-    # kept for compatibility but not used on toggle flow
-    nome="$1"; desc="$2"; on="$3"; off="$4"
-    clear
-    printf '\033c'
-    echo -e "${BOLD}${CYAN}=== $nome ===${RESET}"
-    echo -e "${YELLOW}$desc${RESET}\n"
-    echo "1) ${GREEN}Ativar${RESET}"
-    echo "2) ${RED}Desativar${RESET}"
-    echo "0) Voltar"
-    echo
-    read_prompt "> " op
-    case "$op" in
-        1) ativar_tweak "$nome" "$on" ;;
-        2) desativar_tweak "$nome" "$off" ;;
-        0) return ;;
-        *) echo -e "${RED}Opção inválida${RESET}"; sleep 1 ;;
-    esac
-    press_enter
-}
-
-# =====================================================
 # SUBMENUS (chamadas) — comandos usados pelo toggle
-# (definições mantidas idênticas ao seu script original)
 # =====================================================
 
 submenu_1_cmd_on="settings put secure tap_duration_threshold 70"
@@ -656,10 +898,32 @@ submenu_27_cmd_off="settings delete global display_dual_output"
 submenu_28_cmd_on="settings put global gamepad.latency_reduction 1"
 submenu_28_cmd_off="settings delete global gamepad.latency_reduction"
 
-# (o título de seção de latência foi removido para ficar mais clean — sem alterar itens)
-printf "" >/dev/null
+submenu_29_cmd_on="setprop persist.sys.hid.busy_polling 1"
+submenu_29_cmd_off="setprop persist.sys.hid.busy_polling 0"
+submenu_30_cmd_on="setprop persist.vendor.hid.ultra_polling 1"
+submenu_30_cmd_off="setprop persist.vendor.hid.ultra_polling 0"
+submenu_31_cmd_on="setprop vendor.hid.input.fastpath 1"
+submenu_31_cmd_off="setprop vendor.hid.input.fastpath 0"
+submenu_32_cmd_on="setprop persist.sys.input.filter 0"
+submenu_32_cmd_off="setprop persist.sys.input.filter 1"
+submenu_33_cmd_on="setprop persist.sys.touchpad.smooth 0"
+submenu_33_cmd_off="setprop persist.sys.touchpad.smooth 1"
+submenu_34_cmd_on="setprop persist.sys.input.resample 0"
+submenu_34_cmd_off="setprop persist.sys.input.resample 1"
+submenu_35_cmd_on="setprop persist.sys.input.dejitter 0"
+submenu_35_cmd_off="setprop persist.sys.input.dejitter 1"
+submenu_36_cmd_on="setprop vendor.usb.performance_mode 1"
+submenu_36_cmd_off="setprop vendor.usb.performance_mode 0"
+submenu_37_cmd_on="setprop persist.vendor.usb.low_latency_interrupts 1"
+submenu_37_cmd_off="setprop persist.vendor.usb.low_latency_interrupts 0"
+submenu_38_cmd_on="setprop vendor.usb.max_bus_bandwidth 1"
+submenu_38_cmd_off="setprop vendor.usb.max_bus_bandwidth 0"
+submenu_39_cmd_on="setprop persist.sys.input.dispatch_fast 1"
+submenu_39_cmd_off="setprop persist.sys.input.dispatch_fast 0"
+submenu_40_cmd_on="setprop persist.sys.input.dispatch_immediate 1"
+submenu_40_cmd_off="setprop persist.sys.input.dispatch_immediate 0"
 
-# Reset (41) - kept separated (calls reboot)
+# Reset
 submenu_reset() {
     clear
     printf '\033c'
@@ -677,7 +941,7 @@ submenu_reset() {
     settings delete global display_dual_output
     settings delete global gamepad.latency_reduction
 
-    # SETPROP (Restaurando valor padrão - 0 ou 1)
+    # SETPROP
     setprop vendor.usb.raw_input.enable 0
     setprop persist.usb.low_latency_mode 0
     setprop vendor.usb.hid.priority 1
@@ -712,16 +976,14 @@ submenu_reset() {
     setprop persist.sys.input.dejitter 1
     setprop vendor.usb.performance_mode 0
     setprop persist.vendor.usb.low_latency_interrupts 0
-    setprop persist.vendor.usb.max_bus_bandwidth 0
+    setprop vendor.usb.max_bus_bandwidth 0
     setprop persist.sys.input.dispatch_fast 0
     setprop persist.sys.input.dispatch_immediate 0
 
-    # Adicionado: Remove todas as flags de desativação manual
     rm -rf "$FLAG_DIR" 2>/dev/null
-
-    # Também remove spoof e arquivos de backup para garantir reset limpo
     rm -f "$SPOOF_FILE" "$SPOOF_FLAG" "$ORIG_STORE" 2>/dev/null
-    rm -f "$MODDIR/enable_on_boot" # Resetar auto-boot
+    rm -f "$MODDIR/enable_on_boot"
+    rm -f "$ENABLED_TWEAKS_FILE"
 
     echo -e "${GREEN}✔ Todos os valores foram resetados.${RESET}"
     echo -e "${YELLOW}O sistema será reiniciado agora para completar o reset.${RESET}"
@@ -786,7 +1048,7 @@ if [ "$1" = "--ativar-todos" ]; then
     apply_if_enabled "Saída Dual" "settings put global display_dual_output 1"
     apply_if_enabled "Gamepad Redução de latência" "settings put global gamepad.latency_reduction 1"
 
-    # PROPS (Todos os props são garantidos pelo rebuild_system_prop)
+    # PROPS
     echo -e "${CYAN}Garantindo persistência e aplicando Propriedades...${RESET}"
     rebuild_system_prop
 
@@ -795,7 +1057,18 @@ if [ "$1" = "--ativar-todos" ]; then
 fi
 
 # =====================================================
-# MENU INDIVIDUAL (usa TOGGLE: um clique liga/desliga)
+# Modo boot (--boot) - Aplicar tweaks ativos automaticamente
+# =====================================================
+if [ "$1" = "--boot" ]; then
+    apply_enabled_tweaks_from_file
+    if [ -f "$SPOOF_FLAG" ]; then
+        enable_spoof
+    fi
+    exit 0
+fi
+
+# =====================================================
+# MENU INDIVIDUAL
 # =====================================================
 menu_individual() {
     while true; do
@@ -803,7 +1076,6 @@ menu_individual() {
         printf '\033c'
         echo -e "${BOLD}${MAGENTA}========== TWEAKS INDIVIDUAIS ==========${RESET}\n"
 
-        # <-- RÓTULOS ENCURTADOS (solicitação) -->
         printf " %b 1) Reduz atraso do toque\n" "$(icon check_setting secure tap_duration_threshold 70)"
         printf " %b 2) Diminui duração do toque longo\n" "$(icon check_setting secure long_press_timeout 300)"
         printf " %b 3) Aumenta resposta a cliques múltiplos\n" "$(icon check_setting secure multi_press_timeout 130)"
@@ -842,7 +1114,6 @@ menu_individual() {
 
         printf " %b 28) Gamepad: baixa latência\n" "$(icon check_setting global gamepad.latency_reduction 1)"
 
-        # linhas de latência (tweaks mantidos, sem título extra)
         printf " %b 29) Polling rápido HID\n" "$(icon check_prop persist.sys.hid.busy_polling 1)"
         printf " %b 30) Ultra Polling HID\n" "$(icon check_prop persist.vendor.hid.ultra_polling 1)"
         printf " %b 31) Fastpath HID (rota direta)\n" "$(icon check_prop vendor.hid.input.fastpath 1)"
@@ -863,9 +1134,6 @@ menu_individual() {
             SPOOF_ICON="${RED}${ICON_OFF}${RESET}"
         fi
         printf " %b 42) Ativar / Desativar Spoof 120 FPS (Realme 15 Pro)\n" "$SPOOF_ICON"
-
-        # ===> ADICIONADO: Touchscreen toggle (item 43)
-        printf " %b 43) Desativar/Ativar Touchscreen\n" "$(icon check_prop persist.fera.touch.disabled 1)"
 
         echo -e "\n 0) Voltar\n"
         read_prompt "> " item
@@ -913,8 +1181,6 @@ menu_individual() {
             40) toggle_tweak "Despacho imediato de input" "$submenu_40_cmd_on" "$submenu_40_cmd_off" ;;
             41) submenu_reset ;;
             42) submenu_spoof ;;
-            # ===> ADICIONADO: case para Touchscreen toggle
-            43) toggle_touchscreen ;;
             0) return ;;
             *) echo -e "${RED}Opção inválida...${RESET}"; sleep 1 ;;
         esac
@@ -922,8 +1188,7 @@ menu_individual() {
 }
 
 # =====================================================
-# MENUS POR CATEGORIA (rápidos) — labels em português
-# (mantidos idênticos — sem alteração visual)
+# MENUS POR CATEGORIA
 # =====================================================
 menu_categoria_toque() {
     while true; do
@@ -975,70 +1240,6 @@ menu_categoria_usb() {
     done
 }
 
-# =====================================================
-# NOVA VERSÃO – Touchscreen (isolado e sem interferência)
-# Substitui bloco anterior para evitar alterar permissões de /dev/input/event*
-# =====================================================
-
-# Arquivo que guarda apenas a flag (não gera props conflitantes)
-TOUCH_FLAG="$MODDIR/touch.disabled"
-KEYLAYOUT_DIR="$MODDIR/system/usr/keylayout"
-KEYLAYOUT_FILE="$KEYLAYOUT_DIR/touchscreen.kl"
-
-touchscreen_disable() {
-    # marca flag persistente local (arquivo)
-    echo "1" > "$TOUCH_FLAG" 2>/dev/null
-
-    # Cria keylayout substituto no diretório do módulo (não no /system real)
-    mkdir -p "$KEYLAYOUT_DIR" 2>/dev/null
-    cat > "$KEYLAYOUT_FILE" <<'EOF'
-# Touchscreen bloqueado pelo Fera Alpha
-# Arquivo de placeholder para neutralizar eventos via keylayout
-key 330   WAKE
-EOF
-    # Ajuste de permissões seguro
-    chmod 644 "$KEYLAYOUT_FILE" 2>/dev/null
-
-    # Trigger leve: prop apenas para sinalizar reload interno (não conflita com outros)
-    setprop persist.fera.touch.reload 1 2>/dev/null
-}
-
-touchscreen_enable() {
-    # Remove flag e arquivo criado
-    rm -f "$TOUCH_FLAG" 2>/dev/null
-    rm -f "$KEYLAYOUT_FILE" 2>/dev/null
-
-    # Trigger leve para sinalizar restauração
-    setprop persist.fera.touch.reload 0 2>/dev/null
-}
-
-toggle_touchscreen() {
-    # Mantém comportamento de toggle original (mesmo UX)
-    if [ -f "$TOUCH_FLAG" ]; then
-        echo -e "${CYAN}${ARROW} Ativando touchscreen...${RESET}"
-        touchscreen_enable
-        echo -e "${GREEN}✔ Touchscreen ativado${RESET}"
-    else
-        echo -e "${CYAN}${ARROW} Desativando touchscreen...${RESET}"
-        touchscreen_disable
-        echo -e "${RED}✔ Touchscreen desativado${RESET}"
-    fi
-    sleep 0.3
-}
-
-# =====================================================
-# CONTINUAÇÃO DO SCRIPT ORIGINAL (menus restantes)
-# =====================================================
-
-# =====================================================
-# NOVAS FUNÇÕES: TOUCHSCREEN (disable / enable / toggle)
-# =====================================================
-# -- Observação: entradas antigas foram substituídas pela versão segura acima.
-# -- A chamada toggle_touchscreen segue a mesma assinatura para compatibilidade.
-
-# =====================================================
-# MENU CATEGORIA: MOUSE / PONTEIRO
-# =====================================================
 menu_categoria_mouse() {
     while true; do
         clear
@@ -1061,9 +1262,6 @@ menu_categoria_mouse() {
     done
 }
 
-# =====================================================
-# MENU CATEGORIA INPUT
-# =====================================================
 menu_categoria_input() {
     while true; do
         clear
@@ -1094,9 +1292,6 @@ menu_categoria_input() {
     done
 }
 
-# =====================================================
-# MENU CATEGORIA GPU
-# =====================================================
 menu_categoria_gpu() {
     while true; do
         clear
@@ -1117,9 +1312,6 @@ menu_categoria_gpu() {
     done
 }
 
-# =====================================================
-# MENU CATEGORIA DISPLAY
-# =====================================================
 menu_categoria_display() {
     while true; do
         clear
@@ -1144,9 +1336,6 @@ menu_categoria_display() {
     done
 }
 
-# =====================================================
-# MENU CATEGORIA GAMEPAD
-# =====================================================
 menu_categoria_gamepad() {
     while true; do
         clear
@@ -1164,7 +1353,7 @@ menu_categoria_gamepad() {
 }
 
 # =====================================================
-# MENU MISC (Reset / Boot)
+# MENU MISC
 # =====================================================
 menu_misc() {
     while true; do
@@ -1173,11 +1362,15 @@ menu_misc() {
         echo -e "${BOLD}${CYAN}--- UTILIDADES ---${RESET}\n"
         echo "1) 🔄 Reset geral"
         echo "2) 🔁 Reiniciar dispositivo"
+        echo "3) 🗑️  Limpeza de cache"
+        echo "4) ⚙️  Config. atualização"
         echo "0) Voltar"
         read_prompt "> " op
         case "$op" in
             1) submenu_reset ;;
             2) submenu_reboot ;;
+            3) limpar_cache_avancado ;;
+            4) menu_config_update ;;
             0) return ;;
             *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
         esac
@@ -1185,26 +1378,28 @@ menu_misc() {
 }
 
 # =====================================================
-# MENU PRINCIPAL
+# MENU PRINCIPAL OTIMIZADO
 # =====================================================
 menu() {
     while true; do
         clear
         printf '\033c'
 
-        echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${RESET}"
-        echo -e "${GREEN}${BOLD}║            🎮  F E R A   A L P H A  🎮            ║${RESET}"
-        echo -e "${GREEN}${BOLD}║      Sistema Avançado de Desempenho & Latência    ║${RESET}"
-        echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${RESET}\n"
+        echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
+        echo -e "${GREEN}${BOLD}║              🎮  F E R A   A L P H A  🎮              ║${RESET}"
+        echo -e "${GREEN}${BOLD}║        Sistema Avançado de Desempenho & Latência      ║${RESET}"
+        echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}\n"
 
         echo "[1] 🟢 Aplicar todos os tweaks"
         echo "[2] 🔧 Ajustes individuais (Mais Completo)"
         echo "[3] 🎭 Spoof 120 FPS (Realme 15 Pro)"
-        echo "[4] ⚙️ Categorias rápidas"
-        echo "[5] 🔄 Reiniciar o Dispositivo"
-        echo
+        echo "[4] ⚙️  Categorias rápidas"
+        echo "[5] 🧹 Limpeza de cache avançada"
+        echo "[6] 🔄 Configurações de atualização"
+        echo "[7] 🔁 Reiniciar dispositivo"
+        echo ""
         echo "[0] ❌ Sair"
-        echo
+        echo ""
 
         read_prompt "> " op
         case "$op" in
@@ -1240,7 +1435,9 @@ menu() {
                     esac
                 done
                 ;;
-            5) submenu_reboot ;;
+            5) limpar_cache_avancado ;;
+            6) menu_config_update ;;
+            7) submenu_reboot ;;
             0) exit 0 ;;
             *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
         esac
@@ -1248,8 +1445,13 @@ menu() {
 }
 
 # =====================================================
-# FLUXO DE LOGIN
+# FLUXO PRINCIPAL
 # =====================================================
+
+# 🛡️ EXECUTAR VERIFICAÇÃO INICIAL
+verificacao_inicial
+
+# 🔐 AGORA IR PARA LOGIN
 tent=0
 while [ $tent -lt 3 ]; do
     loading_bar
