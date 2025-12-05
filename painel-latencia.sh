@@ -14,44 +14,8 @@ TMP_DL="/data/local/tmp/painel_new.sh"
 AUTO_UPDATE_FILE="$MODDIR/auto_update_enabled"
 [ ! -f "$AUTO_UPDATE_FILE" ] && echo "1" > "$AUTO_UPDATE_FILE"
 
-auto_update_check() {
-    if [ ! -f "$AUTO_UPDATE_FILE" ] || [ "$(cat "$AUTO_UPDATE_FILE")" != "1" ]; then
-        return 0
-    fi
-    
-    echo -e "\n🔍 Verificando atualizações automaticamente..."
-    
-    LOCAL=$(cat "$LOCAL_HASH" 2>/dev/null || echo "0")
-    REMOTO=$(curl -fsSL "${HASH_URL}?$(date +%s)" | sed 's/[^0-9a-fA-F]//g')
-    
-    if [ -z "$REMOTO" ] || [ "$LOCAL" = "$REMOTO" ]; then
-        return 0
-    fi
-    
-    echo "🔄 Nova versão disponível! Atualizando..."
-    
-    curl -fsSL "${PAINEL_URL}?$(date +%s)" -o "$TMP_DL"
-    
-    if [ ! -s "$TMP_DL" ]; then
-        return 1
-    fi
-    
-    NEW_HASH=$(sha256sum "$TMP_DL" | awk '{print $1}')
-    if [ "$NEW_HASH" != "$REMOTO" ]; then
-        return 1
-    fi
-    
-    cp -f "$TMP_DL" "$SELF"
-    chmod 755 "$SELF"
-    echo "$REMOTO" > "$LOCAL_HASH"
-    
-    echo -e "✅ Atualização concluída! Reiniciando painel...\n"
-    sleep 2
-    exec "$SELF"
-}
-
-# Verificar atualização ao iniciar
-auto_update_check
+# NÃO EXECUTAR AUTO-UPDATE NO INÍCIO - REMOVER CHAMADA ANTES DO LOGIN
+# auto_update_check  # ⬅️ COMENTADO PARA SEGURANÇA
 
 ###############################################################################
 # 🔐 LOGIN OBRIGATÓRIO
@@ -109,6 +73,12 @@ setprop persist.sys.gpu.frame_boost 0
 setprop persist.sys.display.force_refresh 60
 setprop vendor.display.external_priority 0
 setprop persist.video.duplicate.display 0
+setprop ro.min_pointer_dur 8
+setprop windowsmgr.max_events_per_sec 90
+setprop debug.sf.disable_backpressure 0
+setprop debug.sf.use_phase_offset_ns 1
+setprop persist.sys.sf.native_mode 0
+setprop persist.input.resample 1
 rm -rf "$MODDIR/disabled_flags"
 rm -f "$MODDIR/system.prop" "$MODDIR/spoof_enabled"
 rm -f "$MODDIR/original.props"
@@ -135,6 +105,24 @@ verifica_expiracao() {
     fi
 }
 
+# Função para verificar se a licença está próxima de expirar (menos de 24 horas)
+check_license_warning() {
+    if [ ! -f "$LICENSE_FILE" ]; then
+        return 0
+    fi
+    
+    EXP=$(cat "$LICENSE_FILE")
+    NOW=$(date +%s)
+    DIFF=$((EXP - NOW))
+    HOURS=$((DIFF / 3600))
+    
+    if [ "$DIFF" -gt 0 ] && [ "$HOURS" -lt 24 ]; then
+        echo -e "\n${RED}⚠️  AVISO: SUA LICENÇA IRÁ EXPIRAR EM ${HOURS} HORA(S)!${RESET}"
+        echo -e "${YELLOW}Renove seu acesso para evitar perda das configurações.${RESET}\n"
+        sleep 3
+    fi
+}
+
 verifica_expiracao
 
 ativar_servidor() {
@@ -142,7 +130,7 @@ ativar_servidor() {
     PASS="$2"
     FP=$(gera_fingerprint)
 
-    JSON="{\"username\":\"$USER\",\"password\":\"$PASS\",\"fingerprint\":\"$FP\"}"
+    JSON="{\"username\":\"$USER\",\"password\":\"$PASS\",\"fingerprint\":\"FP\"}"
 
     RESP=$(curl -s -X POST -H "Content-Type: application/json" -d "$JSON" "$SERVER/activate")
 
@@ -183,8 +171,7 @@ verificacao_inicial() {
         echo -e "\033[1;36m📝 O que deseja fazer?\033[0m"
         echo "1) Continuar para login (pode falhar)"
         echo "2) Desativar spoof e continuar"
-        echo "3) Verificar atualizações primeiro"
-        echo "4) Sair"
+        echo "3) Sair"
         echo ""
         
         while true; do
@@ -216,34 +203,11 @@ verificacao_inicial() {
                     return 0
                     ;;
                 3)
-                    echo -e "\033[1;36m🔄 Verificando atualizações...\033[0m"
-                    verificar_update_manual
-                    echo ""
-                    echo -e "\033[1;33mPressione ENTER para voltar às opções...\033[0m"
-                    read -r _
-                    clear
-                    echo ""
-                    echo "──────────────────────────────────────────────"
-                    echo "        FERA ALPHA — Verificações Iniciais    "
-                    echo "──────────────────────────────────────────────"
-                    echo ""
-                    echo -e "\033[1;31m⚠️  SPOOF ATIVO DETECTADO!\033[0m"
-                    echo -e "\033[1;33mO spoof do Realme 15 Pro está ativo.\033[0m"
-                    echo -e "\033[1;33mIsso pode impedir o login correto.\033[0m"
-                    echo ""
-                    echo -e "\033[1;36m📝 O que deseja fazer?\033[0m"
-                    echo "1) Continuar para login (pode falhar)"
-                    echo "2) Desativar spoof e continuar"
-                    echo "3) Verificar atualizações primeiro"
-                    echo "4) Sair"
-                    echo ""
-                    ;;
-                4)
                     echo -e "\033[1;36m👋 Saindo...\033[0m"
                     exit 1
                     ;;
                 *)
-                    echo -e "\033[1;31m❌ Opção inválida. Tente 1, 2, 3 ou 4.\033[0m"
+                    echo -e "\033[1;31m❌ Opção inválida. Tente 1, 2 ou 3.\033[0m"
                     ;;
             esac
         done
@@ -252,67 +216,6 @@ verificacao_inicial() {
         echo ""
         return 0
     fi
-}
-
-###############################################################################
-# 🧹 LIMPEZA DE CACHE AVANÇADA
-###############################################################################
-
-limpar_cache_avancado() {
-    clear
-    echo -e "${BOLD}${CYAN}=== LIMPEZA DE CACHE AVANÇADA ===${RESET}\n"
-    
-    echo -e "${YELLOW}Escolha o tipo de limpeza:${RESET}"
-    echo "1) 📦 Cache de apps (padrão)"
-    echo "2) 🗑️  Cache total do sistema (1000G)"
-    echo "3) 🎯 Cache de dalvik"
-    echo "4) 🔍 Cache específico de apps"
-    echo "0) Voltar"
-    echo ""
-    
-    read_prompt "> " opcao_cache
-    
-    case "$opcao_cache" in
-        1)
-            echo -e "\n${CYAN}Limpando cache de apps...${RESET}"
-            pm trim-caches 0
-            echo -e "${GREEN}✅ Cache de apps limpo!${RESET}"
-            ;;
-        2)
-            echo -e "\n${CYAN}Limpando cache TOTAL do sistema (1000G)...${RESET}"
-            pm trim-caches 1000G
-            echo -e "${GREEN}✅ Cache total limpo!${RESET}"
-            ;;
-        3)
-            echo -e "\n${CYAN}Limpando cache dalvik...${RESET}"
-            rm -rf /data/dalvik-cache/* 2>/dev/null
-            echo -e "${GREEN}✅ Cache dalvik limpo!${RESET}"
-            ;;
-        4)
-            echo -e "\n${CYAN}Limpando cache de apps específicos...${RESET}"
-            echo -e "${YELLOW}Digite o nome do pacote do app (ex: com.whatsapp):${RESET}"
-            echo "ou deixe em branco para cancelar"
-            read_prompt "> " app_package
-            
-            if [ -n "$app_package" ]; then
-                echo -e "\n${CYAN}Limpando cache de $app_package...${RESET}"
-                pm clear "$app_package"
-                echo -e "${GREEN}✅ Cache de $app_package limpo!${RESET}"
-            fi
-            ;;
-        0)
-            return
-            ;;
-        *)
-            echo -e "${RED}Opção inválida!${RESET}"
-            ;;
-    esac
-    
-    # Mostrar espaço liberado
-    echo ""
-    df -h /data | tail -1 | awk '{print "📊 Espaço livre em /data: " $4}'
-    
-    press_enter
 }
 
 ###############################################################################
@@ -333,7 +236,6 @@ menu_config_update() {
         
         echo "1) Ativar atualização automática"
         echo "2) Desativar atualização automática"
-        echo "3) Verificar atualização agora"
         echo "0) Voltar"
         echo ""
         
@@ -350,38 +252,6 @@ menu_config_update() {
                 echo -e "${YELLOW}⚠️  Atualização automática desativada${RESET}"
                 sleep 1
                 ;;
-            3)
-                echo -e "\n${CYAN}Verificando atualização...${RESET}"
-                LOCAL=$(cat "$LOCAL_HASH" 2>/dev/null || echo "0")
-                REMOTO=$(curl -fsSL "${HASH_URL}?$(date +%s)" | sed 's/[^0-9a-fA-F]//g')
-                
-                if [ -z "$REMOTO" ]; then
-                    echo -e "${RED}❌ Não foi possível conectar ao servidor${RESET}"
-                elif [ "$LOCAL" = "$REMOTO" ]; then
-                    echo -e "${GREEN}✅ Você já tem a versão mais recente!${RESET}"
-                else
-                    echo -e "${YELLOW}🔄 Nova versão disponível!${RESET}"
-                    echo "Deseja atualizar agora? (s/n)"
-                    read_prompt "> " resposta
-                    
-                    if [ "$resposta" = "s" ] || [ "$resposta" = "S" ]; then
-                        curl -fsSL "${PAINEL_URL}?$(date +%s)" -o "$TMP_DL"
-                        
-                        if [ ! -s "$TMP_DL" ]; then
-                            echo -e "${RED}❌ Falha no download${RESET}"
-                        else
-                            cp -f "$TMP_DL" "$SELF"
-                            chmod 755 "$SELF"
-                            echo "$REMOTO" > "$LOCAL_HASH"
-                            echo -e "${GREEN}✅ Atualização concluída!${RESET}"
-                            echo -e "\nReiniciando painel..."
-                            sleep 2
-                            exec "$SELF"
-                        fi
-                    fi
-                fi
-                press_enter
-                ;;
             0)
                 return
                 ;;
@@ -391,6 +261,77 @@ menu_config_update() {
                 ;;
         esac
     done
+}
+
+###############################################################################
+# 🧹 LIMPEZA DE CACHE SIMPLES
+###############################################################################
+
+limpar_cache_simples() {
+    clear
+    echo -e "${BOLD}${CYAN}=== LIMPEZA DE CACHE ===${RESET}\n"
+    
+    echo -e "${CYAN}Limpando cache do sistema...${RESET}"
+    pm trim-caches 1000G
+    
+    echo -e "${GREEN}✅ Cache limpo com sucesso!${RESET}"
+    
+    # Mostrar espaço liberado
+    echo ""
+    df -h /data | tail -1 | awk '{print "📊 Espaço livre em /data: " $4}'
+    
+    press_enter
+}
+
+###############################################################################
+# 🛠️ FUNÇÃO DE ATUALIZAÇÃO (SÓ APÓS LOGIN)
+###############################################################################
+
+auto_update_check() {
+    # SÓ EXECUTA SE TIVER LICENÇA VÁLIDA
+    if [ ! -f "$LICENSE_FILE" ]; then
+        return 0
+    fi
+    
+    EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
+    NOW=$(date +%s)
+    if [ "$NOW" -ge "$EXP" ]; then
+        return 0  # Licença expirada, não atualiza
+    fi
+    
+    if [ ! -f "$AUTO_UPDATE_FILE" ] || [ "$(cat "$AUTO_UPDATE_FILE")" != "1" ]; then
+        return 0
+    fi
+    
+    echo -e "\n🔍 Verificando atualizações..."
+    
+    LOCAL=$(cat "$LOCAL_HASH" 2>/dev/null || echo "0")
+    REMOTO=$(curl -fsSL "${HASH_URL}?$(date +%s)" | sed 's/[^0-9a-fA-F]//g')
+    
+    if [ -z "$REMOTO" ] || [ "$LOCAL" = "$REMOTO" ]; then
+        return 0
+    fi
+    
+    echo "🔄 Nova versão disponível! Atualizando..."
+    
+    curl -fsSL "${PAINEL_URL}?$(date +%s)" -o "$TMP_DL"
+    
+    if [ ! -s "$TMP_DL" ]; then
+        return 1
+    fi
+    
+    NEW_HASH=$(sha256sum "$TMP_DL" | awk '{print $1}')
+    if [ "$NEW_HASH" != "$REMOTO" ]; then
+        return 1
+    fi
+    
+    cp -f "$TMP_DL" "$SELF"
+    chmod 755 "$SELF"
+    echo "$REMOTO" > "$LOCAL_HASH"
+    
+    echo -e "✅ Atualização concluída! Reiniciando painel...\n"
+    sleep 2
+    exec "$SELF"
 }
 
 ###############################################################################
@@ -445,7 +386,7 @@ bem_vindo() {
     clear
     echo -e "\033[1;32m✔ Login autorizado!\033[0m"
     
-    # Verificar atualização após login (se auto-update estiver ativo)
+    # ⬇️ VERIFICAÇÃO DE UPDATE SÓ AQUI (APÓS LOGIN)
     if [ -f "$AUTO_UPDATE_FILE" ] && [ "$(cat "$AUTO_UPDATE_FILE")" = "1" ]; then
         echo -e "\n${CYAN}🔄 Verificando atualizações...${RESET}"
         auto_update_check
@@ -515,7 +456,7 @@ append_tweaks_props() {
         "USB High Speed=persist.vendor.usb.high_speed=1"
         "USB Power Boost=persist.vendor.usb.power=1"
         "USB Hub Boost=vendor.usb.hub.boost=1"
-        "USB Mouse AntiJitter=vendor.usb.mouse.jitter_filter=1"
+        "USB Mouse AntiJitter=vendor.usb.mouse.jitter_filter=0"
         "Mouse Resposta Linear=persist.sys.mouse.linear_response=1"
         "Mouse Aceleração OFF=persist.sys.pointer.acceleration=0"
         "Mouse Anti-jitter do ponteiro=persist.input.pointer_jitter_smoothing=1"
@@ -532,14 +473,18 @@ append_tweaks_props() {
         "HID Ultra Polling=persist.vendor.hid.ultra_polling=1"
         "HID Fastpath=vendor.hid.input.fastpath=1"
         "Input Filter OFF=persist.sys.input.filter=0"
-        "Touchpad Smooth OFF=persist.sys.touchpad.smooth=0"
         "Input Resample OFF=persist.sys.input.resample=0"
+        "Input Resample Direct=persist.input.resample=0"
         "Input Dejitter OFF=persist.sys.input.dejitter=0"
         "USB Performance Mode=vendor.usb.performance_mode=1"
         "USB Low Latency Interrupts=persist.vendor.usb.low_latency_interrupts=1"
         "USB Max Bus Bandwidth=vendor.usb.max_bus_bandwidth=1"
         "Input Dispatch Fast=persist.sys.input.dispatch_fast=1"
         "Input Dispatch Immediate=persist.sys.input.dispatch_immediate=1"
+        "Min Pointer Duration=ro.min_pointer_dur=1"
+        "Disable Backpressure=debug.sf.disable_backpressure=1"
+        "Disable Phase Offset=debug.sf.use_phase_offset_ns=0"
+        "SF Native Mode=persist.sys.sf.native_mode=1"
     )
 
     for TWEAK in "${TWEAK_PROPS[@]}"; do
@@ -708,14 +653,18 @@ map_tweak_to_cmd() {
         "Ultra Polling HID") echo "$submenu_30_cmd_on" ;;
         "Fastpath HID (rota direta)") echo "$submenu_31_cmd_on" ;;
         "Filtro de input: desligado") echo "$submenu_32_cmd_on" ;;
-        "Suavização do touchpad: desligada") echo "$submenu_33_cmd_on" ;;
-        "Reamostragem de input: desligada") echo "$submenu_34_cmd_on" ;;
-        "Dejitter de input: desligado") echo "$submenu_35_cmd_on" ;;
-        "Modo desempenho USB") echo "$submenu_36_cmd_on" ;;
-        "Interrupções USB baixa latência") echo "$submenu_37_cmd_on" ;;
-        "Máxima largura de banda USB") echo "$submenu_38_cmd_on" ;;
-        "Despacho rápido de input") echo "$submenu_39_cmd_on" ;;
-        "Despacho imediato de input") echo "$submenu_40_cmd_on" ;;
+        "Reamostragem de input: desligada") echo "$submenu_33_cmd_on" ;;
+        "Resample direto (alternativa)") echo "$submenu_45_cmd_on" ;;
+        "Dejitter de input: desligado") echo "$submenu_34_cmd_on" ;;
+        "Modo desempenho USB") echo "$submenu_35_cmd_on" ;;
+        "Interrupções USB baixa latência") echo "$submenu_36_cmd_on" ;;
+        "Máxima largura de banda USB") echo "$submenu_37_cmd_on" ;;
+        "Despacho rápido de input") echo "$submenu_38_cmd_on" ;;
+        "Despacho imediato de input") echo "$submenu_39_cmd_on" ;;
+        "Duração mínima do ponteiro") echo "$submenu_40_cmd_on" ;;
+        "Disable Backpressure SF") echo "$submenu_42_cmd_on" ;;
+        "Disable Phase Offset SF") echo "$submenu_43_cmd_on" ;;
+        "SF Native Mode") echo "$submenu_44_cmd_on" ;;
         *) echo "" ;;
     esac
 }
@@ -860,8 +809,8 @@ submenu_11_cmd_on="setprop persist.vendor.usb.power 1"
 submenu_11_cmd_off="setprop persist.vendor.usb.power 0"
 submenu_12_cmd_on="setprop vendor.usb.hub.boost 1"
 submenu_12_cmd_off="setprop vendor.usb.hub.boost 0"
-submenu_13_cmd_on="setprop vendor.usb.mouse.jitter_filter 1"
-submenu_13_cmd_off="setprop vendor.usb.mouse.jitter_filter 0"
+submenu_13_cmd_on="setprop vendor.usb.mouse.jitter_filter 0"
+submenu_13_cmd_off="setprop vendor.usb.mouse.jitter_filter 1"
 
 submenu_14_cmd_on="setprop persist.sys.mouse.linear_response 1"
 submenu_14_cmd_off="setprop persist.sys.mouse.linear_response 0"
@@ -906,22 +855,33 @@ submenu_31_cmd_on="setprop vendor.hid.input.fastpath 1"
 submenu_31_cmd_off="setprop vendor.hid.input.fastpath 0"
 submenu_32_cmd_on="setprop persist.sys.input.filter 0"
 submenu_32_cmd_off="setprop persist.sys.input.filter 1"
-submenu_33_cmd_on="setprop persist.sys.touchpad.smooth 0"
-submenu_33_cmd_off="setprop persist.sys.touchpad.smooth 1"
-submenu_34_cmd_on="setprop persist.sys.input.resample 0"
-submenu_34_cmd_off="setprop persist.sys.input.resample 1"
-submenu_35_cmd_on="setprop persist.sys.input.dejitter 0"
-submenu_35_cmd_off="setprop persist.sys.input.dejitter 1"
-submenu_36_cmd_on="setprop vendor.usb.performance_mode 1"
-submenu_36_cmd_off="setprop vendor.usb.performance_mode 0"
-submenu_37_cmd_on="setprop persist.vendor.usb.low_latency_interrupts 1"
-submenu_37_cmd_off="setprop persist.vendor.usb.low_latency_interrupts 0"
-submenu_38_cmd_on="setprop vendor.usb.max_bus_bandwidth 1"
-submenu_38_cmd_off="setprop vendor.usb.max_bus_bandwidth 0"
-submenu_39_cmd_on="setprop persist.sys.input.dispatch_fast 1"
-submenu_39_cmd_off="setprop persist.sys.input.dispatch_fast 0"
-submenu_40_cmd_on="setprop persist.sys.input.dispatch_immediate 1"
-submenu_40_cmd_off="setprop persist.sys.input.dispatch_immediate 0"
+submenu_33_cmd_on="setprop persist.sys.input.resample 0"
+submenu_33_cmd_off="setprop persist.sys.input.resample 1"
+submenu_45_cmd_on="setprop persist.input.resample 0"
+submenu_45_cmd_off="setprop persist.input.resample 1"
+submenu_34_cmd_on="setprop persist.sys.input.dejitter 0"
+submenu_34_cmd_off="setprop persist.sys.input.dejitter 1"
+submenu_35_cmd_on="setprop vendor.usb.performance_mode 1"
+submenu_35_cmd_off="setprop vendor.usb.performance_mode 0"
+submenu_36_cmd_on="setprop persist.vendor.usb.low_latency_interrupts 1"
+submenu_36_cmd_off="setprop persist.vendor.usb.low_latency_interrupts 0"
+submenu_37_cmd_on="setprop vendor.usb.max_bus_bandwidth 1"
+submenu_37_cmd_off="setprop vendor.usb.max_bus_bandwidth 0"
+submenu_38_cmd_on="setprop persist.sys.input.dispatch_fast 1"
+submenu_38_cmd_off="setprop persist.sys.input.dispatch_fast 0"
+submenu_39_cmd_on="setprop persist.sys.input.dispatch_immediate 1"
+submenu_39_cmd_off="setprop persist.sys.input.dispatch_immediate 0"
+
+submenu_40_cmd_on="setprop ro.min_pointer_dur 1"
+submenu_40_cmd_off="setprop ro.min_pointer_dur 8"
+
+# Novos tweaks SurfaceFlinger
+submenu_42_cmd_on="setprop debug.sf.disable_backpressure 1"
+submenu_42_cmd_off="setprop debug.sf.disable_backpressure 0"
+submenu_43_cmd_on="setprop debug.sf.use_phase_offset_ns 0"
+submenu_43_cmd_off="setprop debug.sf.use_phase_offset_ns 1"
+submenu_44_cmd_on="setprop persist.sys.sf.native_mode 1"
+submenu_44_cmd_off="setprop persist.sys.sf.native_mode 0"
 
 # Reset
 submenu_reset() {
@@ -966,19 +926,26 @@ submenu_reset() {
     setprop vendor.display.external_priority 0
     setprop persist.video.duplicate.display 0
 
-    # NOVOS COMANDOS DE RESET
+    # Novos comandos reset
     setprop persist.sys.hid.busy_polling 0
     setprop persist.vendor.hid.ultra_polling 0
     setprop vendor.hid.input.fastpath 0
     setprop persist.sys.input.filter 1
-    setprop persist.sys.touchpad.smooth 1
     setprop persist.sys.input.resample 1
+    setprop persist.input.resample 1
     setprop persist.sys.input.dejitter 1
     setprop vendor.usb.performance_mode 0
     setprop persist.vendor.usb.low_latency_interrupts 0
     setprop vendor.usb.max_bus_bandwidth 0
     setprop persist.sys.input.dispatch_fast 0
     setprop persist.sys.input.dispatch_immediate 0
+    
+    # Novas propriedades reset
+    setprop ro.min_pointer_dur 8
+    setprop windowsmgr.max_events_per_sec 90
+    setprop debug.sf.disable_backpressure 0
+    setprop debug.sf.use_phase_offset_ns 1
+    setprop persist.sys.sf.native_mode 0
 
     rm -rf "$FLAG_DIR" 2>/dev/null
     rm -f "$SPOOF_FILE" "$SPOOF_FLAG" "$ORIG_STORE" 2>/dev/null
@@ -1068,72 +1035,68 @@ if [ "$1" = "--boot" ]; then
 fi
 
 # =====================================================
-# MENU INDIVIDUAL
+# MENU TODOS OS TWEAKS EM UMA LISTA (SEM CATEGORIAS)
 # =====================================================
-menu_individual() {
+menu_todos_tweaks() {
     while true; do
         clear
         printf '\033c'
-        echo -e "${BOLD}${MAGENTA}========== TWEAKS INDIVIDUAIS ==========${RESET}\n"
+        echo -e "${BOLD}${MAGENTA}========== TODOS OS TWEAKS EM UMA LISTA ==========${RESET}\n"
 
-        printf " %b 1) Reduz atraso do toque\n" "$(icon check_setting secure tap_duration_threshold 70)"
-        printf " %b 2) Diminui duração do toque longo\n" "$(icon check_setting secure long_press_timeout 300)"
-        printf " %b 3) Aumenta resposta a cliques múltiplos\n" "$(icon check_setting secure multi_press_timeout 130)"
-        printf " %b 4) Deixa ações automáticas mais rápidas\n" "$(icon check_setting secure accessibility_auto_action_delay 200)"
-
-        printf " %b 5) Permite toques via espelhamento\n" "$(icon check_setting global block_untrusted_touches 0)"
-        printf " %b 6) Remove limites de desempenho\n" "$(icon check_setting global restricted_device_performance '0,0')"
-
+        printf " %b 1) Tempo mínimo do toque\n" "$(icon check_setting secure tap_duration_threshold 70)"
+        printf " %b 2) Tempo do toque longo\n" "$(icon check_setting secure long_press_timeout 300)"
+        printf " %b 3) Toques rápidos (duplo/triplo)\n" "$(icon check_setting secure multi_press_timeout 130)"
+        printf " %b 4) Ações automáticas mais rápidas\n" "$(icon check_setting secure accessibility_auto_action_delay 200)"
+        printf " %b 5) Permitir toques no espelhamento\n" "$(icon check_setting global block_untrusted_touches 0)"
+        printf " %b 6) Desbloquear desempenho do sistema\n" "$(icon check_setting global restricted_device_performance '0,0')"
         printf " %b 7) Entrada USB sem filtro (RAW)\n" "$(icon check_prop vendor.usb.raw_input.enable 1)"
         printf " %b 8) USB baixa latência\n" "$(icon check_prop persist.usb.low_latency_mode 1)"
         printf " %b 9) Prioridade HID\n" "$(icon check_prop vendor.usb.hid.priority 2)"
         printf " %b 10) Modo High Speed USB\n" "$(icon check_prop persist.vendor.usb.high_speed 1)"
         printf " %b 11) Potência USB aprimorada\n" "$(icon check_prop persist.vendor.usb.power 1)"
         printf " %b 12) Boost no hub USB\n" "$(icon check_prop vendor.usb.hub.boost 1)"
-        printf " %b 13) Anti-jitter USB (mouse)\n" "$(icon check_prop vendor.usb.mouse.jitter_filter 1)"
-
+        printf " %b 13) Anti-jitter USB (mouse)\n" "$(icon check_prop vendor.usb.mouse.jitter_filter 0)"
         printf " %b 14) Resposta linear do mouse (1:1)\n" "$(icon check_prop persist.sys.mouse.linear_response 1)"
         ACEL=$(getprop persist.sys.pointer.acceleration 2>/dev/null)
         if [ "$ACEL" = "0" ]; then AC_ICON="${GREEN}${ICON_ON}${RESET}"; else AC_ICON="${RED}${ICON_OFF}${RESET}"; fi
         printf " %b 15) Aceleração do mouse desligada\n" "$AC_ICON"
         printf " %b 16) Anti-jitter do ponteiro\n" "$(icon check_prop persist.input.pointer_jitter_smoothing 1)"
-
         printf " %b 17) Input: baixa latência\n" "$(icon check_prop persist.sys.input.low_latency_mode 1)"
         printf " %b 18) Input: alta taxa de atualização\n" "$(icon check_prop persist.sys.input.high_update_rate true)"
         printf " %b 19) Input Boost (priorizar eventos)\n" "$(icon check_prop persist.sys.input.boost 1)"
-
         printf " %b 20) VSync desligado\n" "$(icon check_prop debug.hwui.disable_vsync true)"
         printf " %b 21) GPU: baixa latência\n" "$(icon check_prop persist.sys.gpu.low_latency 1)"
         printf " %b 22) GPU: aceleração de quadros\n" "$(icon check_prop persist.sys.gpu.frame_boost 1)"
-
         printf " %b 23) Tela interna 120Hz (fixo)\n" "$(icon check_setting system peak_refresh_rate 120)"
         printf " %b 24) Forçar 120Hz no display\n" "$(icon check_prop persist.sys.display.force_refresh 120)"
         printf " %b 25) Duplicação (espelhamento) externa\n" "$(icon check_prop persist.video.duplicate.display 1)"
         printf " %b 26) Prioridade de vídeo externa\n" "$(icon check_prop vendor.display.external_priority 1)"
         printf " %b 27) Saída dupla de vídeo\n" "$(icon check_setting global display_dual_output 1)"
-
         printf " %b 28) Gamepad: baixa latência\n" "$(icon check_setting global gamepad.latency_reduction 1)"
-
         printf " %b 29) Polling rápido HID\n" "$(icon check_prop persist.sys.hid.busy_polling 1)"
         printf " %b 30) Ultra Polling HID\n" "$(icon check_prop persist.vendor.hid.ultra_polling 1)"
         printf " %b 31) Fastpath HID (rota direta)\n" "$(icon check_prop vendor.hid.input.fastpath 1)"
         printf " %b 32) Filtro de input: desligado\n" "$(icon check_prop persist.sys.input.filter 0)"
-        printf " %b 33) Suavização do touchpad: desligada\n" "$(icon check_prop persist.sys.touchpad.smooth 0)"
-        printf " %b 34) Reamostragem de input: desligada\n" "$(icon check_prop persist.sys.input.resample 0)"
-        printf " %b 35) Dejitter de input: desligado\n" "$(icon check_prop persist.sys.input.dejitter 0)"
-        printf " %b 36) Modo desempenho USB\n" "$(icon check_prop vendor.usb.performance_mode 1)"
-        printf " %b 37) Interrupções USB baixa latência\n" "$(icon check_prop persist.vendor.usb.low_latency_interrupts 1)"
-        printf " %b 38) Máxima largura de banda USB\n" "$(icon check_prop vendor.usb.max_bus_bandwidth 1)"
-        printf " %b 39) Despacho rápido de input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
-        printf " %b 40) Despacho imediato de input\n" "$(icon check_prop persist.sys.input.dispatch_immediate 1)"
+        printf " %b 33) Reamostragem de input: desligada\n" "$(icon check_prop persist.sys.input.resample 0)"
+        printf " %b 34) Dejitter de input: desligado\n" "$(icon check_prop persist.sys.input.dejitter 0)"
+        printf " %b 35) Modo desempenho USB\n" "$(icon check_prop vendor.usb.performance_mode 1)"
+        printf " %b 36) Interrupções USB baixa latência\n" "$(icon check_prop persist.vendor.usb.low_latency_interrupts 1)"
+        printf " %b 37) Máxima largura de banda USB\n" "$(icon check_prop vendor.usb.max_bus_bandwidth 1)"
+        printf " %b 38) Despacho rápido de input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
+        printf " %b 39) Despacho imediato de input\n" "$(icon check_prop persist.sys.input.dispatch_immediate 1)"
+        printf " %b 40) Duração mínima do ponteiro\n" "$(icon check_prop ro.min_pointer_dur 1)"
+        printf " %b 41) Resample direto (alternativa)\n" "$(icon check_prop persist.input.resample 0)"
+        printf " %b 42) Disable Backpressure SF\n" "$(icon check_prop debug.sf.disable_backpressure 1)"
+        printf " %b 43) Disable Phase Offset SF\n" "$(icon check_prop debug.sf.use_phase_offset_ns 0)"
+        printf " %b 44) SF Native Mode\n" "$(icon check_prop persist.sys.sf.native_mode 1)"
 
-        printf "\n %b 41) Reset total (restaura tudo + reboot)\n" "${RED}${ICON_OFF}${RESET}"
         if spoof_status; then
             SPOOF_ICON="${GREEN}${ICON_ON}${RESET}"
         else
             SPOOF_ICON="${RED}${ICON_OFF}${RESET}"
         fi
-        printf " %b 42) Ativar / Desativar Spoof 120 FPS (Realme 15 Pro)\n" "$SPOOF_ICON"
+        printf " %b 45) Ativar/Desativar Spoof 120 FPS\n" "$SPOOF_ICON"
+        printf " %b 46) Reset total (restaura tudo + reboot)\n" "${RED}${ICON_OFF}${RESET}"
 
         echo -e "\n 0) Voltar\n"
         read_prompt "> " item
@@ -1171,16 +1134,20 @@ menu_individual() {
             30) toggle_tweak "Ultra Polling HID" "$submenu_30_cmd_on" "$submenu_30_cmd_off" ;;
             31) toggle_tweak "Fastpath HID (rota direta)" "$submenu_31_cmd_on" "$submenu_31_cmd_off" ;;
             32) toggle_tweak "Filtro de input: desligado" "$submenu_32_cmd_on" "$submenu_32_cmd_off" ;;
-            33) toggle_tweak "Suavização do touchpad: desligada" "$submenu_33_cmd_on" "$submenu_33_cmd_off" ;;
-            34) toggle_tweak "Reamostragem de input: desligada" "$submenu_34_cmd_on" "$submenu_34_cmd_off" ;;
-            35) toggle_tweak "Dejitter de input: desligado" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
-            36) toggle_tweak "Modo desempenho USB" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
-            37) toggle_tweak "Interrupções USB baixa latência" "$submenu_37_cmd_on" "$submenu_37_cmd_off" ;;
-            38) toggle_tweak "Máxima largura de banda USB" "$submenu_38_cmd_on" "$submenu_38_cmd_off" ;;
-            39) toggle_tweak "Despacho rápido de input" "$submenu_39_cmd_on" "$submenu_39_cmd_off" ;;
-            40) toggle_tweak "Despacho imediato de input" "$submenu_40_cmd_on" "$submenu_40_cmd_off" ;;
-            41) submenu_reset ;;
-            42) submenu_spoof ;;
+            33) toggle_tweak "Reamostragem de input: desligada" "$submenu_33_cmd_on" "$submenu_33_cmd_off" ;;
+            34) toggle_tweak "Dejitter de input: desligado" "$submenu_34_cmd_on" "$submenu_34_cmd_off" ;;
+            35) toggle_tweak "Modo desempenho USB" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
+            36) toggle_tweak "Interrupções USB baixa latência" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
+            37) toggle_tweak "Máxima largura de banda USB" "$submenu_37_cmd_on" "$submenu_37_cmd_off" ;;
+            38) toggle_tweak "Despacho rápido de input" "$submenu_38_cmd_on" "$submenu_38_cmd_off" ;;
+            39) toggle_tweak "Despacho imediato de input" "$submenu_39_cmd_on" "$submenu_39_cmd_off" ;;
+            40) toggle_tweak "Duração mínima do ponteiro" "$submenu_40_cmd_on" "$submenu_40_cmd_off" ;;
+            41) toggle_tweak "Resample direto (alternativa)" "$submenu_45_cmd_on" "$submenu_45_cmd_off" ;;
+            42) toggle_tweak "Disable Backpressure SF" "$submenu_42_cmd_on" "$submenu_42_cmd_off" ;;
+            43) toggle_tweak "Disable Phase Offset SF" "$submenu_43_cmd_on" "$submenu_43_cmd_off" ;;
+            44) toggle_tweak "SF Native Mode" "$submenu_44_cmd_on" "$submenu_44_cmd_off" ;;
+            45) submenu_spoof ;;
+            46) submenu_reset ;;
             0) return ;;
             *) echo -e "${RED}Opção inválida...${RESET}"; sleep 1 ;;
         esac
@@ -1188,215 +1155,28 @@ menu_individual() {
 }
 
 # =====================================================
-# MENUS POR CATEGORIA
-# =====================================================
-menu_categoria_toque() {
-    while true; do
-        clear
-        printf '\033c'
-        echo -e "${BOLD}${CYAN}--- TOQUE ---${RESET}\n"
-        printf " %b 1) Tempo mínimo do toque\n" "$(icon check_setting secure tap_duration_threshold 70)"
-        printf " %b 2) Tempo do toque longo\n" "$(icon check_setting secure long_press_timeout 300)"
-        printf " %b 3) Toques rápidos (duplo/triplo)\n" "$(icon check_setting secure multi_press_timeout 130)"
-        printf " %b 4) Ações automáticas mais rápidas\n" "$(icon check_setting secure accessibility_auto_action_delay 200)"
-        echo -e "\n0) Voltar\n"
-        read_prompt "> " __op
-        case "$__op" in
-            1) toggle_tweak "Tempo mínimo do toque" "$submenu_1_cmd_on" "$submenu_1_cmd_off" ;;
-            2) toggle_tweak "Tempo do toque longo" "$submenu_2_cmd_on" "$submenu_2_cmd_off" ;;
-            3) toggle_tweak "Toques rápidos (duplo/triplo)" "$submenu_3_cmd_on" "$submenu_3_cmd_off" ;;
-            4) toggle_tweak "Ações automáticas mais rápidas" "$submenu_4_cmd_on" "$submenu_4_cmd_off" ;;
-            0) return ;;
-            *) echo -e "${RED}Opção inválida${RESET}"; sleep 1 ;;
-        esac
-    done
-}
-
-menu_categoria_usb() {
-    while true; do
-        clear
-        printf '\033c'
-        echo -e "${BOLD}${CYAN}--- USB / HID ---${RESET}\n"
-        printf " %b 7) Entrada USB sem filtro (RAW)\n" "$(icon check_prop vendor.usb.raw_input.enable 1)"
-        printf " %b 8) USB baixa latência\n" "$(icon check_prop persist.usb.low_latency_mode 1)"
-        printf " %b 9) Prioridade HID\n" "$(icon check_prop vendor.usb.hid.priority 2)"
-        printf " %b 10) Modo High Speed USB\n" "$(icon check_prop persist.vendor.usb.high_speed 1)"
-        printf " %b 11) Potência USB aprimorada\n" "$(icon check_prop persist.vendor.usb.power 1)"
-        printf " %b 12) Boost no hub USB\n" "$(icon check_prop vendor.usb.hub.boost 1)"
-        printf " %b 13) Anti-jitter USB (mouse)\n" "$(icon check_prop vendor.usb.mouse.jitter_filter 1)"
-        echo -e "\n0) Voltar\n"
-        read_prompt "> " op
-        case "$op" in
-            7) toggle_tweak "Entrada USB sem filtro (RAW)" "$submenu_7_cmd_on" "$submenu_7_cmd_off" ;;
-            8) toggle_tweak "USB baixa latência" "$submenu_8_cmd_on" "$submenu_8_cmd_off" ;;
-            9) toggle_tweak "Prioridade HID" "$submenu_9_cmd_on" "$submenu_9_cmd_off" ;;
-            10) toggle_tweak "Modo High Speed USB" "$submenu_10_cmd_on" "$submenu_10_cmd_off" ;;
-            11) toggle_tweak "Potência USB aprimorada" "$submenu_11_cmd_on" "$submenu_11_cmd_off" ;;
-            12) toggle_tweak "Boost no hub USB" "$submenu_12_cmd_on" "$submenu_12_cmd_off" ;;
-            13) toggle_tweak "Anti-jitter USB (mouse)" "$submenu_13_cmd_on" "$submenu_13_cmd_off" ;;
-            0) return ;;
-            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
-        esac
-    done
-}
-
-menu_categoria_mouse() {
-    while true; do
-        clear
-        printf '\033c'
-        echo -e "${BOLD}${CYAN}--- MOUSE / PONTEIRO ---${RESET}\n"
-        printf " %b 14) Resposta linear do mouse (1:1)\n" "$(icon check_prop persist.sys.mouse.linear_response 1)"
-        ACEL=$(getprop persist.sys.pointer.acceleration 2>/dev/null)
-        [ "$ACEL" = "0" ] && AC_ICON="${GREEN}${ICON_ON}${RESET}" || AC_ICON="${RED}${ICON_OFF}${RESET}"
-        printf " %b 15) Aceleração do mouse desligada\n" "$AC_ICON"
-        printf " %b 16) Anti-jitter do ponteiro\n" "$(icon check_prop persist.input.pointer_jitter_smoothing 1)"
-        echo -e "\n0) Voltar\n"
-        read_prompt "> " op
-        case "$op" in
-            14) toggle_tweak "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on" "$submenu_14_cmd_off" ;;
-            15) toggle_tweak "Aceleração do mouse desligada" "$submenu_15_cmd_on" "$submenu_15_cmd_off" ;;
-            16) toggle_tweak "Anti-jitter do ponteiro" "$submenu_16_cmd_on" "$submenu_16_cmd_off" ;;
-            0) return ;;
-            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
-        esac
-    done
-}
-
-menu_categoria_input() {
-    while true; do
-        clear
-        printf '\033c'
-        echo -e "${BOLD}${CYAN}--- INPUT ---${RESET}\n"
-        printf " %b 17) Input baixa latência\n" "$(icon check_prop persist.sys.input.low_latency_mode 1)"
-        printf " %b 18) Input alta taxa de atualização\n" "$(icon check_prop persist.sys.input.high_update_rate true)"
-        printf " %b 19) Input Boost\n" "$(icon check_prop persist.sys.input.boost 1)"
-        printf " %b 32) Filtro de input: desligado\n" "$(icon check_prop persist.sys.input.filter 0)"
-        printf " %b 34) Reamostragem desligada\n" "$(icon check_prop persist.sys.input.resample 0)"
-        printf " %b 35) Dejitter desligado\n" "$(icon check_prop persist.sys.input.dejitter 0)"
-        printf " %b 39) Despacho rápido de input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
-        printf " %b 40) Despacho imediato de input\n" "$(icon check_prop persist.sys.input.dispatch_immediate 1)"
-        echo -e "\n0) Voltar\n"
-        read_prompt "> " op
-        case "$op" in
-            17) toggle_tweak "Input baixa latência" "$submenu_17_cmd_on" "$submenu_17_cmd_off" ;;
-            18) toggle_tweak "Input alta taxa de atualização" "$submenu_18_cmd_on" "$submenu_18_cmd_off" ;;
-            19) toggle_tweak "Input Boost" "$submenu_19_cmd_on" "$submenu_19_cmd_off" ;;
-            32) toggle_tweak "Filtro input" "$submenu_32_cmd_on" "$submenu_32_cmd_off" ;;
-            34) toggle_tweak "Reamostragem" "$submenu_34_cmd_on" "$submenu_34_cmd_off" ;;
-            35) toggle_tweak "Dejitter" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
-            39) toggle_tweak "Despacho rápido de input" "$submenu_39_cmd_on" "$submenu_39_cmd_off" ;;
-            40) toggle_tweak "Despacho imediato de input" "$submenu_40_cmd_on" "$submenu_40_cmd_off" ;;
-            0) return ;;
-            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
-        esac
-    done
-}
-
-menu_categoria_gpu() {
-    while true; do
-        clear
-        printf '\033c'
-        echo -e "${BOLD}${CYAN}--- GPU ---${RESET}\n"
-        printf " %b 20) VSync desligado\n" "$(icon check_prop debug.hwui.disable_vsync true)"
-        printf " %b 21) GPU baixa latência\n" "$(icon check_prop persist.sys.gpu.low_latency 1)"
-        printf " %b 22) GPU aceleração de quadros\n" "$(icon check_prop persist.sys.gpu.frame_boost 1)"
-        echo -e "\n0) Voltar\n"
-        read_prompt "> " op
-        case "$op" in
-            20) toggle_tweak "VSync Off" "$submenu_20_cmd_on" "$submenu_20_cmd_off" ;;
-            21) toggle_tweak "GPU baixa latência" "$submenu_21_cmd_on" "$submenu_21_cmd_off" ;;
-            22) toggle_tweak "GPU aceleração quadros" "$submenu_22_cmd_on" "$submenu_22_cmd_off" ;;
-            0) return ;;
-            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
-        esac
-    done
-}
-
-menu_categoria_display() {
-    while true; do
-        clear
-        printf '\033c'
-        echo -e "${BOLD}${CYAN}--- DISPLAY ---${RESET}\n"
-        printf " %b 23) Tela interna 120Hz\n" "$(icon check_setting system peak_refresh_rate 120)"
-        printf " %b 24) Forçar 120Hz\n" "$(icon check_prop persist.sys.display.force_refresh 120)"
-        printf " %b 25) Duplicação externa\n" "$(icon check_prop persist.video.duplicate.display 1)"
-        printf " %b 26) Prioridade externa\n" "$(icon check_prop vendor.display.external_priority 1)"
-        printf " %b 27) Saída dupla\n" "$(icon check_setting global display_dual_output 1)"
-        echo -e "\n0) Voltar\n"
-        read_prompt "> " op
-        case "$op" in
-            23) toggle_tweak "Tela interna 120Hz" "$submenu_23_cmd_on" "$submenu_23_cmd_off" ;;
-            24) toggle_tweak "Forçar 120Hz Display" "$submenu_24_cmd_on" "$submenu_24_cmd_off" ;;
-            25) toggle_tweak "Duplicação externa" "$submenu_25_cmd_on" "$submenu_25_cmd_off" ;;
-            26) toggle_tweak "Prioridade externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
-            27) toggle_tweak "Saída dupla" "$submenu_27_cmd_on" "$submenu_27_cmd_off" ;;
-            0) return ;;
-            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
-        esac
-    done
-}
-
-menu_categoria_gamepad() {
-    while true; do
-        clear
-        printf '\033c'
-        echo -e "${BOLD}${CYAN}--- GAMEPAD ---${RESET}\n"
-        printf " %b 28) Gamepad baixa latência\n" "$(icon check_setting global gamepad.latency_reduction 1)"
-        echo -e "\n0) Voltar\n"
-        read_prompt "> " op
-        case "$op" in
-            28) toggle_tweak "Gamepad baixa latência" "$submenu_28_cmd_on" "$submenu_28_cmd_off" ;;
-            0) return ;;
-            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
-        esac
-    done
-}
-
-# =====================================================
-# MENU MISC
-# =====================================================
-menu_misc() {
-    while true; do
-        clear
-        printf '\033c'
-        echo -e "${BOLD}${CYAN}--- UTILIDADES ---${RESET}\n"
-        echo "1) 🔄 Reset geral"
-        echo "2) 🔁 Reiniciar dispositivo"
-        echo "3) 🗑️  Limpeza de cache"
-        echo "4) ⚙️  Config. atualização"
-        echo "0) Voltar"
-        read_prompt "> " op
-        case "$op" in
-            1) submenu_reset ;;
-            2) submenu_reboot ;;
-            3) limpar_cache_avancado ;;
-            4) menu_config_update ;;
-            0) return ;;
-            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
-        esac
-    done
-}
-
-# =====================================================
-# MENU PRINCIPAL OTIMIZADO
+# MENU PRINCIPAL SIMPLIFICADO
 # =====================================================
 menu() {
     while true; do
         clear
         printf '\033c'
+        
+        # Verificar aviso de licença
+        check_license_warning
 
         echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
         echo -e "${GREEN}${BOLD}║              🎮  F E R A   A L P H A  🎮              ║${RESET}"
         echo -e "${GREEN}${BOLD}║        Sistema Avançado de Desempenho & Latência      ║${RESET}"
         echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}\n"
 
-        echo "[1] 🟢 Aplicar todos os tweaks"
-        echo "[2] 🔧 Ajustes individuais (Mais Completo)"
-        echo "[3] 🎭 Spoof 120 FPS (Realme 15 Pro)"
-        echo "[4] ⚙️  Categorias rápidas"
-        echo "[5] 🧹 Limpeza de cache avançada"
-        echo "[6] 🔄 Configurações de atualização"
-        echo "[7] 🔁 Reiniciar dispositivo"
+        echo "[1] 🟢 Aplicar todos os tweaks de uma vez"
+        echo "[2] 🔧 Selecionar tweaks individualmente"
+        echo "[3] 🎭 Ativar/Desativar Spoof 120 FPS"
+        echo "[4] 🧹 Limpeza de cache"
+        echo "[5] ⚙️  Configurações de atualização"
+        echo "[6] 🔁 Reiniciar dispositivo"
+        echo "[7] 🚨 Reset total (restaura tudo)"
         echo ""
         echo "[0] ❌ Sair"
         echo ""
@@ -1404,40 +1184,12 @@ menu() {
         read_prompt "> " op
         case "$op" in
             1) sh "$0" --ativar-todos; press_enter ;;
-            2) menu_individual ;;
+            2) menu_todos_tweaks ;;
             3) submenu_spoof ;;
-            4)
-                while true; do
-                    clear
-                    printf '\033c'
-                    echo -e "${BOLD}${CYAN}--- CATEGORIAS RÁPIDAS ---${RESET}\n"
-                    echo "1) Toque"
-                    echo "2) USB/HID (Latency)"
-                    echo "3) Mouse/Ponteiro"
-                    echo "4) Input"
-                    echo "5) GPU"
-                    echo "6) Display"
-                    echo "7) Gamepad"
-                    echo "8) Utilidades"
-                    echo "0) Voltar"
-                    read_prompt "> " catop
-                    case "$catop" in
-                        1) menu_categoria_toque ;;
-                        2) menu_categoria_usb ;;
-                        3) menu_categoria_mouse ;;
-                        4) menu_categoria_input ;;
-                        5) menu_categoria_gpu ;;
-                        6) menu_categoria_display ;;
-                        7) menu_categoria_gamepad ;;
-                        8) menu_misc ;;
-                        0) break ;;
-                        *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
-                    esac
-                done
-                ;;
-            5) limpar_cache_avancado ;;
-            6) menu_config_update ;;
-            7) submenu_reboot ;;
+            4) limpar_cache_simples ;;
+            5) menu_config_update ;;
+            6) submenu_reboot ;;
+            7) submenu_reset ;;
             0) exit 0 ;;
             *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
         esac
@@ -1445,7 +1197,7 @@ menu() {
 }
 
 # =====================================================
-# FLUXO PRINCIPAL
+# FLUXO PRINCIPAL COM SEGURANÇA
 # =====================================================
 
 # 🛡️ EXECUTAR VERIFICAÇÃO INICIAL
