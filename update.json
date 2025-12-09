@@ -1,12 +1,13 @@
 {
-  "version": "2.2",
+  "version": "2.3",
   
   "spoof": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/spoof_on.prop",
 
   "arquivos": {
     "painel-latencia.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh",
-    "service.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/service.sh"
+    "service.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/service.sh",
+    "feracheck.sh": "https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/feracheck.sh"
   },
 
-  "changelog": "Atualização automática + controle de spoof remoto."
+  "changelog": "✨ NOVO: feracheck.sh para verificação manual de licença! ✨\n\n✅ O que há de novo:\n• Script feracheck.sh para verificar dias restantes da licença\n• Menu interativo no Termux\n• Verificação de atualizações\n• Sistema de fallback robusto para base64\n• Link simbólico automático em /data/local/tmp/\n\n🛠️ Melhorias:\n• Service.sh otimizado com múltiplos fallbacks\n• Compatibilidade com mais dispositivos\n• Feedback visual melhorado na instalação"
 }
