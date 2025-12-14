@@ -16,30 +16,37 @@ AUTO_UPDATE_FILE="$MODDIR/auto_update_enabled"
 [ ! -f "$AUTO_UPDATE_FILE" ] && echo "1" > "$AUTO_UPDATE_FILE"
 
 ###############################################################################
-# 🔐 LOGIN OBRIGATÓRIO
+# 🔐 SISTEMA DE LICENÇA FORTIFICADO
 ###############################################################################
 
 SERVER="https://painel-licenca-server.onrender.com"
 LICENSE_FILE="$MODDIR/license_info"
+LICENSE_SIGNATURE_FILE="$MODDIR/license_signature"
 RESET_SCRIPT="$MODDIR/reset_auto.sh"
+SESSION_FILE="$MODDIR/session_token"
+CHAVE_SECRETA="FER4_4LPH4_2024_S3CR3T_K3Y_N0T_SH4R3D"
+
+# Log de segurança
+SECURITY_LOG="/data/local/tmp/fera_security.log"
+log_seguranca() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$SECURITY_LOG"
+}
 
 gera_fingerprint() {
-    # Primeiro tenta usar fingerprint salvo
-    if [ -f "$FINGERPRINT_FILE" ]; then
-        cat "$FINGERPRINT_FILE"
-        return 0
-    fi
-    
-    # Gerar fingerprint com dados QUE NÃO MUDAM COM SPOOF
+    # Gerar fingerprint com dados HARDWARE QUE NÃO MUDAM COM SPOOF
+    # Usar apenas identificadores de hardware imutáveis
     ANDROID_ID=$(settings get secure android_id 2>/dev/null || echo "")
     SERIAL=$(getprop ro.serialno 2>/dev/null || echo "")
-    BUILD_ID=$(getprop ro.build.id 2>/dev/null || echo "")
-    DEVICE=$(getprop ro.product.device 2>/dev/null || echo "")
+    HARDWARE=$(getprop ro.boot.hardware 2>/dev/null || echo "")
+    BOOT_SERIAL=$(getprop ro.boot.serialno 2>/dev/null || echo "")
+    PLATFORM=$(getprop ro.hardware.chipname 2>/dev/null || getprop ro.board.platform 2>/dev/null || echo "")
     
-    # Usar combinação que não é afetada pelo spoof
-    FP_RAW="${ANDROID_ID}-${SERIAL}-${BUILD_ID}-${DEVICE}"
+    # Combinação segura e imutável
+    FP_RAW="${ANDROID_ID}-${SERIAL}-${HARDWARE}-${BOOT_SERIAL}-${PLATFORM}"
     
-    if command -v md5sum >/dev/null 2>&1; then
+    if command -v sha256sum >/dev/null 2>&1; then
+        FP=$(echo -n "$FP_RAW" | sha256sum | awk '{print $1}')
+    elif command -v md5sum >/dev/null 2>&1; then
         FP=$(echo -n "$FP_RAW" | md5sum | awk '{print $1}')
     elif command -v md5 >/dev/null 2>&1; then
         FP=$(echo -n "$FP_RAW" | md5 | awk '{print $1}')
@@ -47,13 +54,32 @@ gera_fingerprint() {
         FP=$(echo -n "$FP_RAW" | tr -d ' ' | tr -d '\n')
     fi
     
-    # Salvar para uso futuro
-    echo "$FP" > "$FINGERPRINT_FILE"
     echo "$FP"
 }
 
+gerar_assinatura() {
+    DATA="$1"
+    echo -n "$DATA" | sha256sum | awk '{print $1}'
+    # Em produção real, use: echo -n "${DATA}:${CHAVE_SECRETA}" | openssl dgst -sha256 -hmac "$CHAVE_SECRETA"
+}
+
+verificar_assinatura() {
+    DATA="$1"
+    ASSINATURA="$2"
+    
+    CALCULADA=$(gerar_assinatura "$DATA")
+    
+    if [ "$ASSINATURA" = "$CALCULADA" ]; then
+        return 0
+    else
+        log_seguranca "FALHA_ASSINATURA: Esperada=$CALCULADA, Recebida=$ASSINATURA"
+        return 1
+    fi
+}
+
 reset_total_auto() {
-    echo "⚠ RESET AUTOMÁTICO — LICENÇA EXPIRADA" > /dev/kmsg
+    echo "⚠ RESET AUTOMÁTICO — LICENÇA EXPIRADA/INVÁLIDA" > /dev/kmsg
+    log_seguranca "RESET_AUTO: Licença expirada ou inválida, resetando sistema"
 
     cat > "$RESET_SCRIPT" <<'EOF'
 #!/system/bin/sh
@@ -124,9 +150,13 @@ rm -rf "$MODDIR/disabled_flags"
 rm -f "$MODDIR/system.prop" "$MODDIR/spoof_enabled"
 rm -f "$MODDIR/original.props"
 rm -f "$MODDIR/license_info"
+rm -f "$MODDIR/license_signature"
+rm -f "$MODDIR/session_token"
 # Restaurar flag de touchscreen removida
 setprop persist.fera.touch.disabled 0
 rm -f "$MODDIR/touch_disabled_list"
+# Log de segurança
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] RESET_COMPLETO: Sistema restaurado ao padrão" > /data/local/tmp/fera_security.log
 reboot
 EOF
 
@@ -135,36 +165,88 @@ EOF
     exit 1
 }
 
-verifica_expiracao() {
+verificar_integridade_licenca() {
+    # Verificação rigorosa da licença
     if [ ! -f "$LICENSE_FILE" ]; then
-        return 0
+        log_seguranca "ERRO: Arquivo de licença não existe"
+        echo -e "${RED}❌ ERRO: Licença não encontrada${RESET}"
+        return 1
     fi
     
-    EXP=$(cat "$LICENSE_FILE")
+    if [ ! -f "$LICENSE_SIGNATURE_FILE" ]; then
+        log_seguranca "ERRO: Assinatura da licença não existe"
+        echo -e "${RED}❌ ERRO: Assinatura de licença não encontrada${RESET}"
+        return 1
+    fi
     
-    # ⭐⭐ MODIFICAÇÃO IMPORTANTE: Verificar se é licença "permanente"
-    # Se o timestamp for maior que 10 anos no futuro, considerar como ilimitada
+    EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
+    ASSINATURA=$(cat "$LICENSE_SIGNATURE_FILE" 2>/dev/null)
+    FP=$(gera_fingerprint)
+    
+    # Verificar se não está vazio
+    if [ -z "$EXP" ] || [ -z "$ASSINATURA" ]; then
+        log_seguranca "ERRO: Licença ou assinatura vazia"
+        return 1
+    fi
+    
+    # Verificar formato - deve ser timestamp numérico válido
+    if ! echo "$EXP" | grep -qE '^[0-9]{10,}$'; then
+        log_seguranca "ERRO: Formato de licença inválido: $EXP"
+        echo -e "${RED}❌ ERRO: Formato de licença inválido${RESET}"
+        return 1
+    fi
+    
+    # Verificar timestamp razoável (entre 2020 e 2030)
+    if [ "$EXP" -lt 1577836800 ] || [ "$EXP" -gt 1893456000 ]; then
+        log_seguranca "ERRO: Timestamp fora do intervalo: $EXP"
+        echo -e "${RED}❌ ERRO: Data de licença inválida${RESET}"
+        return 1
+    fi
+    
+    # Verificar assinatura
+    DADOS_ASSINAR="${EXP}:${FP}"
+    if ! verificar_assinatura "$DADOS_ASSINAR" "$ASSINATURA"; then
+        log_seguranca "ERRO: Assinatura inválida para licença"
+        echo -e "${RED}❌ ERRO: Licença corrompida ou modificada${RESET}"
+        return 1
+    fi
+    
+    # Verificar expiração
     NOW=$(date +%s)
-    TEN_YEARS=315360000  # 10 anos em segundos
-    FUTURE_LIMIT=$((NOW + TEN_YEARS))
+    if [ "$NOW" -ge "$EXP" ]; then
+        log_seguranca "AVISO: Licença expirada em $EXP, agora é $NOW"
+        echo -e "${RED}⚠️  Licença expirada${RESET}"
+        return 1
+    fi
     
-    # Verifica se EXP é um número (para licenças normais)
-    if echo "$EXP" | grep -qE '^[0-9]+$'; then
-        if [ "$EXP" -gt "$FUTURE_LIMIT" ]; then
-            # Licença permanente detectada (timestamp muito no futuro)
-            echo "✅ Licença PERMANENTE/ILIMITADA ativa" > /dev/kmsg
-            return 0  # ⬅️ IGNORA VERIFICAÇÃO DE EXPIRAÇÃO
-        fi
+    return 0
+}
+
+verifica_expiracao() {
+    # Verificação principal que não pode ser burlada
+    if ! verificar_integridade_licenca; then
+        log_seguranca "BLOQUEIO: Tentativa de acesso sem licença válida"
+        reset_total_auto
+    fi
+    
+    # Verificação adicional com servidor (online)
+    verificar_licenca_online
+}
+
+verificar_licenca_online() {
+    # Tentar verificar com servidor se houver conexão
+    FP=$(gera_fingerprint)
+    EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
+    
+    # Tentar verificar com servidor
+    if curl --connect-timeout 10 -s -f "$SERVER/ping" >/dev/null 2>&1; then
+        RESP=$(curl -s -X POST -H "Content-Type: application/json" \
+               -d "{\"fingerprint\":\"$FP\",\"expires\":\"$EXP\"}" \
+               "$SERVER/verify_license")
         
-        # Verificação normal para licenças com data real
-        if [ "$NOW" -ge "$EXP" ]; then
+        if echo "$RESP" | grep -q '"valid":false'; then
+            log_seguranca "SERVIDOR_REJEITOU: Licença inválida no servidor"
             reset_total_auto
-        fi
-    else
-        # Se não for número, verifica se é string "UNLIMITED"
-        if [ "$EXP" = "UNLIMITED" ] || [ "$EXP" = "PERMANENT" ]; then
-            echo "✅ Licença ILIMITADA ativa" > /dev/kmsg
-            return 0
         fi
     fi
 }
@@ -177,16 +259,8 @@ check_license_warning() {
     EXP=$(cat "$LICENSE_FILE")
     NOW=$(date +%s)
     
-    # ⭐⭐ MODIFICAÇÃO: Não mostrar aviso para licenças "permanentes"
-    # Verifica se é número
+    # Apenas para timestamps numéricos
     if echo "$EXP" | grep -qE '^[0-9]+$'; then
-        TEN_YEARS=315360000
-        FUTURE_LIMIT=$((NOW + TEN_YEARS))
-        
-        if [ "$EXP" -gt "$FUTURE_LIMIT" ]; then
-            return 0  # ⬅️ Não mostra aviso para licença permanente
-        fi
-        
         DIFF=$((EXP - NOW))
         HOURS=$((DIFF / 3600))
         
@@ -195,18 +269,15 @@ check_license_warning() {
             echo -e "${YELLOW}Renove seu acesso para evitar perda das configurações.${RESET}\n"
             sleep 3
         fi
-    else
-        # Se não for número (string como "UNLIMITED"), não mostra aviso
-        return 0
     fi
 }
-
-verifica_expiracao
 
 ativar_servidor() {
     USER="$1"
     PASS="$2"
     FP=$(gera_fingerprint)
+    
+    log_seguranca "TENTATIVA_LOGIN: Usuário=$USER, Fingerprint=$FP"
 
     JSON="{\"username\":\"$USER\",\"password\":\"$PASS\",\"fingerprint\":\"$FP\"}"
 
@@ -214,23 +285,60 @@ ativar_servidor() {
 
     if echo "$RESP" | grep -q '"status":"error"' || echo "$RESP" | grep -q '"error"'; then
         REASON=$(echo "$RESP" | sed -n 's/.*"reason":"\([^"]*\)".*/\1/p')
+        log_seguranca "LOGIN_FALHOU: $REASON"
         echo -e "\033[1;31m❌ Erro: ${REASON:-Credenciais inválidas}\033[0m"
         return 1
     fi
 
     echo -e "\033[1;32m✔ Login aprovado!\033[0m"
+    log_seguranca "LOGIN_SUCESSO: Usuário=$USER"
 
     EXP=$(echo "$RESP" | sed -n 's/.*"expires_at":\([0-9]*\).*/\1/p')
-    [ ! -z "$EXP" ] && echo "$EXP" > "$MODDIR/license_info"
+    if [ -z "$EXP" ]; then
+        echo -e "\033[1;31m❌ Erro: Resposta inválida do servidor\033[0m"
+        log_seguranca "ERRO_SERVIDOR: Resposta sem timestamp"
+        return 1
+    fi
 
-    # ⭐⭐ ADICIONADO: Log para debug
-    echo "DEBUG: Servidor enviou timestamp: $EXP" > /dev/kmsg
+    # Gerar assinatura local
+    FP=$(gera_fingerprint)
+    DADOS_ASSINAR="${EXP}:${FP}"
+    ASSINATURA=$(gerar_assinatura "$DADOS_ASSINAR")
+    
+    # Salvar licença com assinatura
+    echo "$EXP" > "$LICENSE_FILE"
+    echo "$ASSINATURA" > "$LICENSE_SIGNATURE_FILE"
+    
+    # Gerar token de sessão
+    SESSION_TOKEN=$(echo -n "${EXP}:${FP}:$(date +%s)" | sha256sum | awk '{print $1}')
+    echo "$SESSION_TOKEN" > "$SESSION_FILE"
+    
+    log_seguranca "LICENÇA_ATIVADA: Expira=$EXP, Assinatura=$ASSINATURA"
 
     return 0
 }
 
+verificar_sessao() {
+    if [ ! -f "$SESSION_FILE" ]; then
+        return 1
+    fi
+    
+    SESSION_TOKEN=$(cat "$SESSION_FILE")
+    SESSION_TIME=$(stat -c %Y "$SESSION_FILE" 2>/dev/null || echo "0")
+    NOW=$(date +%s)
+    
+    # Sessão expira em 24 horas
+    if [ $((NOW - SESSION_TIME)) -gt 86400 ]; then
+        rm -f "$SESSION_FILE"
+        log_seguranca "SESSAO_EXPIROU: Tempo decorrido $((NOW - SESSION_TIME))s"
+        return 1
+    fi
+    
+    return 0
+}
+
 ###############################################################################
-# 🛡️ VERIFICAÇÃO INICIAL MELHORADA
+# 🛡️ VERIFICAÇÃO INICIAL FORTIFICADA
 ###############################################################################
 
 salvar_props_originais() {
@@ -256,7 +364,15 @@ verificacao_inicial() {
     echo "──────────────────────────────────────────────"
     echo ""
     
-    # Apenas exibe status do spoof sem bloquear
+    # Log de inicialização
+    log_seguranca "INICIALIZACAO: Script iniciado, verificando integridade"
+    
+    # Verificar se o script foi modificado
+    SCRIPT_HASH=$(sha256sum "$0" 2>/dev/null | awk '{print $1}' || echo "")
+    if [ -n "$SCRIPT_HASH" ]; then
+        log_seguranca "SCRIPT_HASH: $SCRIPT_HASH"
+    fi
+    
     echo "🔍 Verificando configurações de spoof..."
     if [ -f "$SPOOF_FLAG" ] || ( [ -f "$SPOOF_FILE" ] && grep -q "ro.product.model=RMX5101" "$SPOOF_FILE" 2>/dev/null ); then
         echo -e "\033[1;33m📱 Spoof Realme 15 Pro detectado.\033[0m"
@@ -335,28 +451,14 @@ limpar_cache_simples() {
 }
 
 ###############################################################################
-# 🛠️ FUNÇÃO DE ATUALIZAÇÃO (SÓ APÓS LOGIN)
+# 🛠️ FUNÇÃO DE ATUALIZAÇÃO (SÓ APÓS LOGIN VÁLIDO)
 ###############################################################################
 
 auto_update_check() {
-    if [ ! -f "$LICENSE_FILE" ]; then
-        return 0
-    fi
-    
-    EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
-    NOW=$(date +%s)
-    
-    # ⭐⭐ MODIFICAÇÃO: Verificar se é licença permanente
-    if echo "$EXP" | grep -qE '^[0-9]+$'; then
-        TEN_YEARS=315360000
-        FUTURE_LIMIT=$((NOW + TEN_YEARS))
-        
-        if [ "$EXP" -gt "$FUTURE_LIMIT" ] || [ "$EXP" = "UNLIMITED" ]; then
-            # Licença permanente, permite atualização
-            :
-        elif [ "$NOW" -ge "$EXP" ]; then
-            return 0
-        fi
+    # Verificar licença primeiro
+    if ! verificar_integridade_licenca; then
+        log_seguranca "UPDATE_BLOQUEADO: Licença inválida para atualização"
+        return 1
     fi
     
     if [ ! -f "$AUTO_UPDATE_FILE" ] || [ "$(cat "$AUTO_UPDATE_FILE")" != "1" ]; then
@@ -377,11 +479,13 @@ auto_update_check() {
     curl -fsSL "${PAINEL_URL}?$(date +%s)" -o "$TMP_DL"
     
     if [ ! -s "$TMP_DL" ]; then
+        log_seguranca "UPDATE_ERRO: Download falhou ou arquivo vazio"
         return 1
     fi
     
     NEW_HASH=$(sha256sum "$TMP_DL" | awk '{print $1}')
     if [ "$NEW_HASH" != "$REMOTO" ]; then
+        log_seguranca "UPDATE_ERRO: Hash não confere: $NEW_HASH vs $REMOTO"
         return 1
     fi
     
@@ -389,6 +493,7 @@ auto_update_check() {
     chmod 755 "$SELF"
     echo "$REMOTO" > "$LOCAL_HASH"
     
+    log_seguranca "UPDATE_SUCESSO: Script atualizado para hash $REMOTO"
     echo -e "✅ Atualização concluída! Reiniciando painel...\n"
     sleep 2
     exec "$SELF"
@@ -408,29 +513,19 @@ loading_bar() {
 print_header() {
     clear
     cols=$(stty size | awk '{print $2}')
-
-    t1="FERA ALPHA"
-    t2="LOGIN"
-    line=$(printf "%${#t1}s" | tr " " "=")
-
-    pad=$(( (cols - ( ${#line} + 2 + ${#t1} + 2 + ${#line} )) / 2 ))
-    printf "%${pad}s"
-    echo -e "\033[1;34m$line  $t1  $line\033[0m"
-
-    printf "%$(( (cols - ${#t2}) / 2 ))s"
-    echo -e "\033[1;37m$t2\033[0m"
-    echo ""
+    
+    # Título do login
+    echo -e "\n\033[1;37m🔥 FERA ALPHA ULTRA GAMER\033[0m"
+    echo -e "\n\033[1;37m🔐 LOGIN OBRIGATÓRIO\033[0m\n"
 }
 
 input_login() {
-    echo -e "\033[1;34m┌─ Usuário\033[0m"
-    echo -n "└─> "
+    echo -e "\033[1;37m👤 Usuário:\033[0m"
+    echo -n "➤ "
     read USER
-    echo -e "\033[1;34m┌─ Senha\033[0m"
-    echo -n "└─> "
-    stty -echo
+    echo -e "\033[1;37m🔒 Senha:\033[0m"
+    echo -n "➤ "
     read PASS
-    stty echo
     echo ""
 }
 
@@ -446,30 +541,24 @@ bem_vindo() {
     clear
     echo -e "\033[1;32m✔ Login autorizado!\033[0m"
     
-    # ⭐⭐ ADICIONADO: Mostrar status da licença
+    # Mostrar status da licença
     if [ -f "$LICENSE_FILE" ]; then
         EXP=$(cat "$LICENSE_FILE")
         NOW=$(date +%s)
         
         if echo "$EXP" | grep -qE '^[0-9]+$'; then
-            TEN_YEARS=315360000
-            FUTURE_LIMIT=$((NOW + TEN_YEARS))
-            
-            if [ "$EXP" -gt "$FUTURE_LIMIT" ]; then
-                echo -e "\033[1;36m🌟 LICENÇA PERMANENTE ATIVADA!\033[0m"
-                echo -e "\033[1;33m📅 Expira em: $(date -d @$EXP)\033[0m"
-            else
-                DIFF=$((EXP - NOW))
-                DAYS=$((DIFF / 86400))
-                if [ "$DAYS" -gt 0 ]; then
-                    echo -e "\033[1;33m📅 Dias restantes: $DAYS\033[0m"
-                fi
+            DIFF=$((EXP - NOW))
+            DAYS=$((DIFF / 86400))
+            if [ "$DAYS" -gt 365 ]; then
+                echo -e "\033[1;36m🌟 LICENÇA VIP ATIVADA!\033[0m"
+                echo -e "\033[1;33m📅 Expira em: $(date -d @$EXP '+%d/%m/%Y %H:%M')\033[0m"
+            elif [ "$DAYS" -gt 0 ]; then
+                echo -e "\033[1;33m📅 Dias restantes: $DAYS\033[0m"
             fi
-        elif [ "$EXP" = "UNLIMITED" ] || [ "$EXP" = "PERMANENT" ]; then
-            echo -e "\033[1;36m🌟 LICENÇA ILIMITADA ATIVADA!\033[0m"
         fi
     fi
     
+    # Verificar atualizações se ativado
     if [ -f "$AUTO_UPDATE_FILE" ] && [ "$(cat "$AUTO_UPDATE_FILE")" = "1" ]; then
         echo -e "\n${CYAN}🔄 Verificando atualizações...${RESET}"
         auto_update_check
@@ -534,7 +623,7 @@ append_tweaks_props() {
     TWEAK_PROPS=(
         "USB RAW=vendor.usb.raw_input.enable=1"
         "USB Low Latency=persist.usb.low_latency_mode=1"
-        "USB HID Priority=vendor.usb.hid.priority=2"
+        "USB HID Priority=vendor.usb.hid.priority=1"
         "USB High Speed=persist.vendor.usb.high_speed=1"
         "USB Power Boost=persist.vendor.usb.power=1"
         "USB Hub Boost=vendor.usb.hub.boost=1"
@@ -542,13 +631,10 @@ append_tweaks_props() {
         "Mouse Resposta Linear=persist.sys.mouse.linear_response=1"
         "Mouse Aceleração OFF=persist.sys.pointer.acceleration=0"
         "Input Low Latency Mode=persist.sys.input.low_latency_mode=1"
-        "Input High Update Rate=persist.sys.input.high_update_rate=true"
         "VSync OFF=debug.hwui.disable_vsync=0"
         "GPU Low Latency=persist.sys.gpu.low_latency=1"
         "GPU Frame Boost=persist.sys.gpu.frame_boost=1"
         "HID Fastpath=vendor.hid.input.fastpath=1"
-        "Input Filter OFF=persist.sys.input.filter=0"
-        "Input Resample OFF=persist.sys.input.resample=0"
         "USB Performance Mode=vendor.usb.performance_mode=1"
         "USB Low Latency Interrupts=persist.vendor.usb.low_latency_interrupts=1"
         "Input Dispatch Fast=persist.sys.input.dispatch_fast=1"
@@ -557,10 +643,6 @@ append_tweaks_props() {
         # Novas propriedades adicionadas
         "Debug Input Low Latency=debug.input.low_latency=1"
         "Debug Input No Buffer=debug.input.no_buffer=1"
-        "Input Low Latency Mode Global=settings:global:input.low_latency_mode=1"
-        "Input Reduce Input Lag=settings:global:input.reduce_input_lag=1"
-        "Input Instant Touch Response=settings:global:input.instant_touch_response=1"
-        "Pointer Precision=settings:global:pointer.precision=1"
         # Novas propriedades de latch
         "Debug SF Latch Unsignaled=debug.sf.latch_unsignaled=1"
         "Persist Game Frame Stability=persist.game.frame_stability=1"
@@ -581,8 +663,6 @@ append_tweaks_props() {
             
             # Aplicar o setting
             settings put "$NS" "$KEY" "$VAL" 2>/dev/null
-            
-            # Não adicionar ao system.prop (settings são diferentes)
             continue
         fi
 
@@ -725,34 +805,22 @@ map_tweak_to_cmd() {
         "Resposta linear do mouse (1:1)") echo "$submenu_14_cmd_on" ;;
         "Aceleração do mouse desligada") echo "$submenu_15_cmd_on" ;;
         "Input: baixa latência") echo "$submenu_17_cmd_on" ;;
-        "Input: alta taxa de atualização") echo "$submenu_18_cmd_on" ;;
         "VSync desligado") echo "$submenu_20_cmd_on" ;;
         "GPU: baixa latência") echo "$submenu_21_cmd_on" ;;
         "GPU: aceleração de quadros") echo "$submenu_22_cmd_on" ;;
         "Tela interna 120Hz (fixo)") echo "$submenu_23_cmd_on" ;;
-        "Forçar 120Hz no display") echo "$submenu_24_cmd_on" ;;
         "Duplicação (espelhamento) externa") echo "$submenu_25_cmd_on" ;;
         "Prioridade de vídeo externa") echo "$submenu_26_cmd_on" ;;
-        "Saída dupla de vídeo") echo "$submenu_27_cmd_on" ;;
         "Gamepad: baixa latência") echo "$submenu_28_cmd_on" ;;
         "Fastpath HID (rota direta)") echo "$submenu_31_cmd_on" ;;
-        "Filtro de input: desligado") echo "$submenu_32_cmd_on" ;;
-        "Reamostragem de input: desligada") echo "$submenu_33_cmd_on" ;;
-        "Resample direto (alternativa)") echo "$submenu_45_cmd_on" ;;
         "Modo desempenho USB") echo "$submenu_35_cmd_on" ;;
         "Interrupções USB baixa latência") echo "$submenu_36_cmd_on" ;;
-        "Máxima largura de banda USB") echo "$submenu_37_cmd_on" ;;
         "Despacho rápido de input") echo "$submenu_38_cmd_on" ;;
-        "SF HW Acceleration") echo "$submenu_45_cmd_on" ;;
         "Polling Rate HID (1000Hz)") echo "$submenu_51_cmd_on" ;;
         "CPU Responsividade Aprimorada") echo "$submenu_56_cmd_on" ;;
         # Novos tweaks
         "Debug Input Low Latency") echo "$submenu_57_cmd_on" ;;
         "Debug Input No Buffer") echo "$submenu_58_cmd_on" ;;
-        "Input Low Latency Mode Global") echo "$submenu_59_cmd_on" ;;
-        "Input Reduce Input Lag") echo "$submenu_60_cmd_on" ;;
-        "Input Instant Touch Response") echo "$submenu_61_cmd_on" ;;
-        "Pointer Precision") echo "$submenu_62_cmd_on" ;;
         # Novas propriedades de latch
         "Debug SF Latch Unsignaled") echo "$submenu_63_cmd_on" ;;
         "Persist Game Frame Stability") echo "$submenu_64_cmd_on" ;;
@@ -887,7 +955,7 @@ submenu_7_cmd_on="setprop vendor.usb.raw_input.enable 1"
 submenu_7_cmd_off="setprop vendor.usb.raw_input.enable 0"
 submenu_8_cmd_on="setprop persist.usb.low_latency_mode 1"
 submenu_8_cmd_off="setprop persist.usb.low_latency_mode 0"
-submenu_9_cmd_on="setprop vendor.usb.hid.priority 2"
+submenu_9_cmd_on="setprop vendor.usb.hid.priority 1"
 submenu_9_cmd_off="setprop vendor.usb.hid.priority 1"
 submenu_10_cmd_on="setprop persist.vendor.usb.high_speed 1"
 submenu_10_cmd_off="setprop persist.vendor.usb.high_speed 0"
@@ -905,8 +973,6 @@ submenu_15_cmd_off="setprop persist.sys.pointer.acceleration 1"
 
 submenu_17_cmd_on="setprop persist.sys.input.low_latency_mode 1"
 submenu_17_cmd_off="setprop persist.sys.input.low_latency_mode 0"
-submenu_18_cmd_on="setprop persist.sys.input.high_update_rate true"
-submenu_18_cmd_off="setprop persist.sys.input.high_update_rate false"
 
 submenu_20_cmd_on="setprop debug.hwui.disable_vsync 0"
 submenu_20_cmd_off="setprop debug.hwui.disable_vsync 1"
@@ -917,12 +983,11 @@ submenu_22_cmd_off="setprop persist.sys.gpu.frame_boost 0"
 
 submenu_23_cmd_on="settings put system peak_refresh_rate 120; settings put system min_refresh_rate 120"
 submenu_23_cmd_off="settings delete system peak_refresh_rate; settings delete system.min_refresh_rate"
-# Removido: Forçar 120Hz no display
+
 submenu_25_cmd_on="setprop persist.video.duplicate.display 1"
 submenu_25_cmd_off="setprop persist.video.duplicate.display 0"
 submenu_26_cmd_on="setprop vendor.display.external_priority 1"
 submenu_26_cmd_off="setprop vendor.display.external_priority 0"
-# Removido: Saída dupla de vídeo
 
 submenu_28_cmd_on="settings put global gamepad.latency_reduction 1"
 submenu_28_cmd_off="settings delete global gamepad.latencia_reduction"
@@ -930,24 +995,13 @@ submenu_28_cmd_off="settings delete global gamepad.latencia_reduction"
 submenu_31_cmd_on="setprop vendor.hid.input.fastpath 1"
 submenu_31_cmd_off="setprop vendor.hid.input.fastpath 0"
 
-submenu_32_cmd_on="setprop persist.sys.input.filter 0"
-submenu_32_cmd_off="setprop persist.sys.input.filter 1"
-
-submenu_33_cmd_on="setprop persist.sys.input.resample 0"
-submenu_33_cmd_off="setprop persist.sys.input.resample 1"
-
-submenu_45_cmd_on="setprop persist.input.resample 0"
-submenu_45_cmd_off="setprop persist.input.resample 1"
-
 submenu_35_cmd_on="setprop vendor.usb.performance_mode 1"
 submenu_35_cmd_off="setprop vendor.usb.performance_mode 0"
 submenu_36_cmd_on="setprop persist.vendor.usb.low_latency_interrupts 1"
 submenu_36_cmd_off="setprop persist.vendor.usb.low_latency_interrupts 0"
-# Removido: Máxima largura de banda USB
+
 submenu_38_cmd_on="setprop persist.sys.input.dispatch_fast 1"
 submenu_38_cmd_off="setprop persist.sys.input.dispatch_fast 0"
-
-# Removido: SF HW Acceleration
 
 submenu_51_cmd_on="setprop persist.vendor.hid.polling_rate 1000"
 submenu_51_cmd_off="setprop persist.vendor.hid.polling_rate 0"
@@ -961,18 +1015,6 @@ submenu_57_cmd_off="setprop debug.input.low_latency 0"
 
 submenu_58_cmd_on="setprop debug.input.no_buffer 1"
 submenu_58_cmd_off="setprop debug.input.no_buffer 0"
-
-submenu_59_cmd_on="settings put global input.low_latency_mode 1"
-submenu_59_cmd_off="settings delete global input.low_latency_mode"
-
-submenu_60_cmd_on="settings put global input.reduce_input_lag 1"
-submenu_60_cmd_off="settings delete global input.reduce_input_lag"
-
-submenu_61_cmd_on="settings put global input.instant_touch_response 1"
-submenu_61_cmd_off="settings delete global input.instant_touch_response"
-
-submenu_62_cmd_on="settings put global pointer.precision 1"
-submenu_62_cmd_off="settings delete global pointer.precision"
 
 # Novas propriedades de latch
 submenu_63_cmd_on="setprop debug.sf.latch_unsignaled 1"
@@ -1211,7 +1253,6 @@ submenu_reset() {
     setprop vendor.hid.input.fastpath 0
     setprop persist.sys.input.filter 1
     setprop persist.sys.input.resample 1
-    setprop persist.input.resample 1
     setprop vendor.usb.performance_mode 0
     setprop persist.vendor.usb.low_latency_interrupts 0
     setprop persist.sys.input.dispatch_fast 0
@@ -1316,11 +1357,7 @@ if [ "$1" = "--ativar-todos" ]; then
     # Aplicar novos tweaks
     apply_if_enabled "Debug Input Low Latency" "setprop debug.input.low_latency 1"
     apply_if_enabled "Debug Input No Buffer" "setprop debug.input.no_buffer 1"
-    apply_if_enabled "Input Low Latency Mode Global" "settings put global input.low_latency_mode 1"
-    apply_if_enabled "Input Reduce Input Lag" "settings put global input.reduce_input_lag 1"
-    apply_if_enabled "Input Instant Touch Response" "settings put global input.instant_touch_response 1"
-    apply_if_enabled "Pointer Precision" "settings put global pointer.precision 1"
-
+    
     # Aplicar novas propriedades de latch
     apply_if_enabled "Debug SF Latch Unsignaled" "setprop debug.sf.latch_unsignaled 1"
     apply_if_enabled "Persist Game Frame Stability" "setprop persist.game.frame_stability 1"
@@ -1331,6 +1368,12 @@ if [ "$1" = "--ativar-todos" ]; then
 fi
 
 if [ "$1" = "--boot" ]; then
+    # Verificar licença antes de aplicar tweaks no boot
+    if ! verificar_integridade_licenca; then
+        log_seguranca "BOOT_BLOQUEADO: Licença inválida no boot"
+        exit 1
+    fi
+    
     apply_enabled_tweaks_from_file
     if [ -f "$SPOOF_FLAG" ]; then
         enable_spoof
@@ -1352,7 +1395,7 @@ menu_todos_tweaks() {
         printf " %b 6) Desbloquear desempenho do sistema\n" "$(icon check_setting global restricted_device_performance '0,0')"
         printf " %b 7) Entrada USB sem filtro (RAW)\n" "$(icon check_prop vendor.usb.raw_input.enable 1)"
         printf " %b 8) USB baixa latência\n" "$(icon check_prop persist.usb.low_latency_mode 1)"
-        printf " %b 9) Prioridade HID\n" "$(icon check_prop vendor.usb.hid.priority 2)"
+        printf " %b 9) Prioridade HID\n" "$(icon check_prop vendor.usb.hid.priority 1)"
         printf " %b 10) Modo High Speed USB\n" "$(icon check_prop persist.vendor.usb.high_speed 1)"
         printf " %b 11) Potência USB aprimorada\n" "$(icon check_prop persist.vendor.usb.power 1)"
         printf " %b 12) Boost no hub USB\n" "$(icon check_prop vendor.usb.hub.boost 1)"
@@ -1362,41 +1405,33 @@ menu_todos_tweaks() {
         if [ "$ACEL" = "0" ]; then AC_ICON="${GREEN}${ICON_ON}${RESET}"; else AC_ICON="${RED}${ICON_OFF}${RESET}"; fi
         printf " %b 15) Aceleração do mouse desligada\n" "$AC_ICON"
         printf " %b 16) Input: baixa latência\n" "$(icon check_prop persist.sys.input.low_latency_mode 1)"
-        printf " %b 17) Input: alta taxa de atualização\n" "$(icon check_prop persist.sys.input.high_update_rate true)"
-        printf " %b 18) VSync desligado\n" "$(icon check_prop debug.hwui.disable_vsync 0)"
-        printf " %b 19) GPU: baixa latência\n" "$(icon check_prop persist.sys.gpu.low_latency 1)"
-        printf " %b 20) GPU: aceleração de quadros\n" "$(icon check_prop persist.sys.gpu.frame_boost 1)"
-        printf " %b 21) Tela interna 120Hz (fixo)\n" "$(icon check_setting system peak_refresh_rate 120)"
-        printf " %b 22) Duplicação (espelhamento) externa\n" "$(icon check_prop persist.video.duplicate.display 1)"
-        printf " %b 23) Prioridade de vídeo externa\n" "$(icon check_prop vendor.display.external_priority 1)"
-        printf " %b 24) Gamepad: baixa latência\n" "$(icon check_setting global gamepad.latency_reduction 1)"
-        printf " %b 25) Fastpath HID (rota direta)\n" "$(icon check_prop vendor.hid.input.fastpath 1)"
-        printf " %b 26) Filtro de input: desligado\n" "$(icon check_prop persist.sys.input.filter 0)"
-        printf " %b 27) Reamostragem de input: desligada\n" "$(icon check_prop persist.sys.input.resample 0)"
-        printf " %b 28) Modo desempenho USB\n" "$(icon check_prop vendor.usb.performance_mode 1)"
-        printf " %b 29) Interrupções USB baixa latência\n" "$(icon check_prop persist.vendor.usb.low_latency_interrupts 1)"
-        printf " %b 30) Despacho rápido de input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
-        printf " %b 31) Resample direto (alternativa)\n" "$(icon check_prop persist.input.resample 0)"
-        printf " %b 32) Polling Rate HID (1000Hz)\n" "$(icon check_prop persist.vendor.hid.polling_rate 1000)"
-        printf " %b 33) CPU Responsividade Aprimorada\n" "$(icon check_prop sem_enhanced_cpu_responsiveness 1)"
-        printf " %b 34) Debug Input Low Latency\n" "$(icon check_prop debug.input.low_latency 1)"
-        printf " %b 35) Debug Input No Buffer\n" "$(icon check_prop debug.input.no_buffer 1)"
-        printf " %b 36) Input Low Latency Mode Global\n" "$(icon check_setting global input.low_latency_mode 1)"
-        printf " %b 37) Input Reduce Input Lag\n" "$(icon check_setting global input.reduce_input_lag 1)"
-        printf " %b 38) Input Instant Touch Response\n" "$(icon check_setting global input.instant_touch_response 1)"
-        printf " %b 39) Pointer Precision\n" "$(icon check_setting global pointer.precision 1)"
-        printf " %b 40) Debug SF Latch Unsignaled\n" "$(icon check_prop debug.sf.latch_unsignaled 1)"
-        printf " %b 41) Persist Game Frame Stability\n" "$(icon check_prop persist.game.frame_stability 1)"
-        printf " %b 42) Persist Sys CPU Boost\n" "$(icon check_prop persist.sys.cpu.boost 1)"
+        printf " %b 17) VSync desligado\n" "$(icon check_prop debug.hwui.disable_vsync 0)"
+        printf " %b 18) GPU: baixa latência\n" "$(icon check_prop persist.sys.gpu.low_latency 1)"
+        printf " %b 19) GPU: aceleração de quadros\n" "$(icon check_prop persist.sys.gpu.frame_boost 1)"
+        printf " %b 20) Tela interna 120Hz (fixo)\n" "$(icon check_setting system peak_refresh_rate 120)"
+        printf " %b 21) Duplicação (espelhamento) externa\n" "$(icon check_prop persist.video.duplicate.display 1)"
+        printf " %b 22) Prioridade de vídeo externa\n" "$(icon check_prop vendor.display.external_priority 1)"
+        printf " %b 23) Gamepad: baixa latência\n" "$(icon check_setting global gamepad.latency_reduction 1)"
+        printf " %b 24) Fastpath HID (rota direta)\n" "$(icon check_prop vendor.hid.input.fastpath 1)"
+        printf " %b 25) Modo desempenho USB\n" "$(icon check_prop vendor.usb.performance_mode 1)"
+        printf " %b 26) Interrupções USB baixa latência\n" "$(icon check_prop persist.vendor.usb.low_latency_interrupts 1)"
+        printf " %b 27) Despacho rápido de input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
+        printf " %b 28) Polling Rate HID (1000Hz)\n" "$(icon check_prop persist.vendor.hid.polling_rate 1000)"
+        printf " %b 29) CPU Responsividade Aprimorada\n" "$(icon check_prop sem_enhanced_cpu_responsiveness 1)"
+        printf " %b 30) Debug Input Low Latency\n" "$(icon check_prop debug.input.low_latency 1)"
+        printf " %b 31) Debug Input No Buffer\n" "$(icon check_prop debug.input.no_buffer 1)"
+        printf " %b 32) Debug SF Latch Unsignaled\n" "$(icon check_prop debug.sf.latch_unsignaled 1)"
+        printf " %b 33) Persist Game Frame Stability\n" "$(icon check_prop persist.game.frame_stability 1)"
+        printf " %b 34) Persist Sys CPU Boost\n" "$(icon check_prop persist.sys.cpu.boost 1)"
 
         if spoof_status; then
             SPOOF_ICON="${GREEN}${ICON_ON}${RESET}"
         else
             SPOOF_ICON="${RED}${ICON_OFF}${RESET}"
         fi
-        printf " %b 43) Ativar/Desativar Spoof 120 FPS\n" "$SPOOF_ICON"
-        printf " %b 44) Reset total (restaura tudo + reboot)\n" "${RED}${ICON_OFF}${RESET}"
-        printf " %b 45) Status de Performance\n" "${CYAN}📊${RESET}"
+        printf " %b 35) Ativar/Desativar Spoof 120 FPS\n" "$SPOOF_ICON"
+        printf " %b 36) Reset total (restaura tudo + reboot)\n" "${RED}${ICON_OFF}${RESET}"
+        printf " %b 37) Status de Performance\n" "${CYAN}📊${RESET}"
 
         echo -e "\n 0) Voltar\n"
         read_prompt "> " item
@@ -1418,35 +1453,27 @@ menu_todos_tweaks() {
             14) toggle_tweak "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on" "$submenu_14_cmd_off" ;;
             15) toggle_tweak "Aceleração do mouse desligada" "$submenu_15_cmd_on" "$submenu_15_cmd_off" ;;
             16) toggle_tweak "Input: baixa latência" "$submenu_17_cmd_on" "$submenu_17_cmd_off" ;;
-            17) toggle_tweak "Input: alta taxa de atualização" "$submenu_18_cmd_on" "$submenu_18_cmd_off" ;;
-            18) toggle_tweak "VSync desligado" "$submenu_20_cmd_on" "$submenu_20_cmd_off" ;;
-            19) toggle_tweak "GPU: baixa latência" "$submenu_21_cmd_on" "$submenu_21_cmd_off" ;;
-            20) toggle_tweak "GPU: aceleração de quadros" "$submenu_22_cmd_on" "$submenu_22_cmd_off" ;;
-            21) toggle_tweak "Tela interna 120Hz (fixo)" "$submenu_23_cmd_on" "$submenu_23_cmd_off" ;;
-            22) toggle_tweak "Duplicação (espelhamento) externa" "$submenu_25_cmd_on" "$submenu_25_cmd_off" ;;
-            23) toggle_tweak "Prioridade de vídeo externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
-            24) toggle_tweak "Gamepad: baixa latência" "$submenu_28_cmd_on" "$submenu_28_cmd_off" ;;
-            25) toggle_tweak "Fastpath HID (rota direta)" "$submenu_31_cmd_on" "$submenu_31_cmd_off" ;;
-            26) toggle_tweak "Filtro de input: desligado" "$submenu_32_cmd_on" "$submenu_32_cmd_off" ;;
-            27) toggle_tweak "Reamostragem de input: desligada" "$submenu_33_cmd_on" "$submenu_33_cmd_off" ;;
-            28) toggle_tweak "Modo desempenho USB" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
-            29) toggle_tweak "Interrupções USB baixa latência" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
-            30) toggle_tweak "Despacho rápido de input" "$submenu_38_cmd_on" "$submenu_38_cmd_off" ;;
-            31) toggle_tweak "Resample direto (alternativa)" "$submenu_45_cmd_on" "$submenu_45_cmd_off" ;;
-            32) toggle_tweak "Polling Rate HID (1000Hz)" "$submenu_51_cmd_on" "$submenu_51_cmd_off" ;;
-            33) toggle_tweak "CPU Responsividade Aprimorada" "$submenu_56_cmd_on" "$submenu_56_cmd_off" ;;
-            34) toggle_tweak "Debug Input Low Latency" "$submenu_57_cmd_on" "$submenu_57_cmd_off" ;;
-            35) toggle_tweak "Debug Input No Buffer" "$submenu_58_cmd_on" "$submenu_58_cmd_off" ;;
-            36) toggle_tweak "Input Low Latency Mode Global" "$submenu_59_cmd_on" "$submenu_59_cmd_off" ;;
-            37) toggle_tweak "Input Reduce Input Lag" "$submenu_60_cmd_on" "$submenu_60_cmd_off" ;;
-            38) toggle_tweak "Input Instant Touch Response" "$submenu_61_cmd_on" "$submenu_61_cmd_off" ;;
-            39) toggle_tweak "Pointer Precision" "$submenu_62_cmd_on" "$submenu_62_cmd_off" ;;
-            40) toggle_tweak "Debug SF Latch Unsignaled" "$submenu_63_cmd_on" "$submenu_63_cmd_off" ;;
-            41) toggle_tweak "Persist Game Frame Stability" "$submenu_64_cmd_on" "$submenu_64_cmd_off" ;;
-            42) toggle_tweak "Persist Sys CPU Boost" "$submenu_65_cmd_on" "$submenu_65_cmd_off" ;;
-            43) submenu_spoof ;;
-            44) submenu_reset ;;
-            45) show_performance_status ;;
+            17) toggle_tweak "VSync desligado" "$submenu_20_cmd_on" "$submenu_20_cmd_off" ;;
+            18) toggle_tweak "GPU: baixa latência" "$submenu_21_cmd_on" "$submenu_21_cmd_off" ;;
+            19) toggle_tweak "GPU: aceleração de quadros" "$submenu_22_cmd_on" "$submenu_22_cmd_off" ;;
+            20) toggle_tweak "Tela interna 120Hz (fixo)" "$submenu_23_cmd_on" "$submenu_23_cmd_off" ;;
+            21) toggle_tweak "Duplicação (espelhamento) externa" "$submenu_25_cmd_on" "$submenu_25_cmd_off" ;;
+            22) toggle_tweak "Prioridade de vídeo externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
+            23) toggle_tweak "Gamepad: baixa latência" "$submenu_28_cmd_on" "$submenu_28_cmd_off" ;;
+            24) toggle_tweak "Fastpath HID (rota direta)" "$submenu_31_cmd_on" "$submenu_31_cmd_off" ;;
+            25) toggle_tweak "Modo desempenho USB" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
+            26) toggle_tweak "Interrupções USB baixa latência" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
+            27) toggle_tweak "Despacho rápido de input" "$submenu_38_cmd_on" "$submenu_38_cmd_off" ;;
+            28) toggle_tweak "Polling Rate HID (1000Hz)" "$submenu_51_cmd_on" "$submenu_51_cmd_off" ;;
+            29) toggle_tweak "CPU Responsividade Aprimorada" "$submenu_56_cmd_on" "$submenu_56_cmd_off" ;;
+            30) toggle_tweak "Debug Input Low Latency" "$submenu_57_cmd_on" "$submenu_57_cmd_off" ;;
+            31) toggle_tweak "Debug Input No Buffer" "$submenu_58_cmd_on" "$submenu_58_cmd_off" ;;
+            32) toggle_tweak "Debug SF Latch Unsignaled" "$submenu_63_cmd_on" "$submenu_63_cmd_off" ;;
+            33) toggle_tweak "Persist Game Frame Stability" "$submenu_64_cmd_on" "$submenu_64_cmd_off" ;;
+            34) toggle_tweak "Persist Sys CPU Boost" "$submenu_65_cmd_on" "$submenu_65_cmd_off" ;;
+            35) submenu_spoof ;;
+            36) submenu_reset ;;
+            37) show_performance_status ;;
             0) return ;;
             *) echo -e "${RED}Opção inválida...${RESET}"; sleep 1 ;;
         esac
@@ -1590,82 +1617,140 @@ apply_resolution_on_boot() {
 }
 
 # =====================================================
-# MENU PRINCIPAL SIMPLIFICADO
+# MENU PRINCIPAL SEGURO
 # =====================================================
 menu() {
+    # Verificação rigorosa antes de mostrar menu
+    if ! verificar_integridade_licenca; then
+        echo -e "${RED}⛔ ACESSO NEGADO: Licença inválida ou expirada${RESET}"
+        echo -e "${YELLOW}Execute o script novamente para autenticar.${RESET}"
+        sleep 3
+        exit 1
+    fi
+    
+    # Verificar sessão
+    if ! verificar_sessao; then
+        echo -e "${YELLOW}⚠️  Sessão expirada. Faça login novamente.${RESET}"
+        sleep 2
+        return 1
+    fi
+    
     while true; do
         clear
         printf '\033c'
         
         check_license_warning
 
-        echo -e "${GREEN}${BOLD}${RESET}"
-        echo -e "${GREEN}${BOLD}              🎮  FERA ALPHA ULTRA GAMER  🎮              ${RESET}"
-        echo -e "${GREEN}${BOLD}${RESET}\n"
+        echo -e "\033[1;37m🔥 FERA ALPHA ULTRA GAMER"
+        echo -e "\033[1;37m────────────────────────"
+        
+        # Mostrar status da licença
+        if [ -f "$LICENSE_FILE" ]; then
+            EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
+            NOW=$(date +%s)
+            if echo "$EXP" | grep -qE '^[0-9]+$'; then
+                DIFF=$((EXP - NOW))
+                DAYS=$((DIFF / 86400))
+                if [ "$DAYS" -gt 365 ]; then
+                    echo -e "\033[1;37mStatus: 🟢 Ativo  |  VIP ILIMITADO\033[0m"
+                elif [ "$DAYS" -gt 0 ]; then
+                    echo -e "\033[1;37mStatus: 🟢 Ativo  |  $DAYS dias restantes\033[0m"
+                else
+                    echo -e "\033[1;37mStatus: 🔴 Expirado\033[0m"
+                fi
+            else
+                echo -e "\033[1;37mStatus: 🔴 Inválido\033[0m"
+            fi
+        else
+            echo -e "\033[1;37mStatus: 🔴 Não ativo\033[0m"
+        fi
 
-        echo "[01] 🟢 Aplicar todos"
-        echo "[02] 🔧 Tweaks individuais"
-        echo "[03] 🎭 Spoof 120 FPS"
-        echo "[04] 🧹 Limpar cache"
-        echo "[05] ⚙️  Atualizações"
-        echo "[06] 🔁 Reiniciar"
-        echo "[07] 🚨 Reset total"
-        echo "[08] 🔒 Performance seguro"
-        echo "[09] 🔄 Restaurar padrão"
-        echo "[10] 📊 Status"
-        echo "[11] ⚡ Modo Extremo"
-        echo "[12] 📐 Resolução/DPI"
+        echo -e "\033[1;37m"
+        echo "[01] ⚡ Aplicar tudo"
+        echo "[02] 🎛 Tweaks individuais"
+        echo ""
+        echo "[03] ⚡ Turbo absoluto"
+        echo "[04] 🔥 Extremo (sem limites)"
+        echo ""
+        echo "[05] 🎯 Spoof 120 FPS"
+        echo "[06] 🖥 Resolução / DPI"
+        echo ""
+        echo "[07] 📊 Status do sistema"
+        echo "[08] ⚙️  Config. Atualização"
+        echo "[09] ♻️ Reset geral"
         echo ""
         echo "[00] ❌ Sair"
         echo ""
+        echo -n "➤ Selecione uma opção: "
+        read op
 
-        read_prompt "> " op
         case "$op" in
-            01) sh "$0" --ativar-todos; press_enter ;;
-            02) menu_todos_tweaks ;;
-            03) submenu_spoof ;;
-            04) limpar_cache_simples ;;
-            05) menu_config_update ;;
-            06) submenu_reboot ;;
-            07) submenu_reset ;;
-            08) 
-                echo -e "${CYAN}Ativando modo ULTRA SEGURO...${RESET}"
+            01) 
+                sh "$0" --ativar-todos
+                press_enter
+                ;;
+            02) 
+                menu_todos_tweaks
+                ;;
+            03) 
+                echo -e "\033[1;37m"
                 apply_safe_performance
                 press_enter
                 ;;
-            09)
-                echo -e "${CYAN}Restaurando todas as configurações...${RESET}"
-                restaurar_tudo_padrao
+            04) 
+                echo -e "\033[1;37m"
+                apply_extreme_performance
                 press_enter
                 ;;
-            10)
-                show_performance_status
+            05) 
+                submenu_spoof
                 ;;
-            11)
-                echo -e "${RED}AVISO: Esta opção provavelmente causará REINÍCIO!${RESET}"
-                read_prompt "Continuar? (s/N): " confirm
-                if [ "$confirm" = "s" ] || [ "$confirm" = "S" ]; then
-                    apply_extreme_performance
-                fi
-                press_enter
-                ;;
-            12)
+            06) 
                 config_resolucao_dpi
                 ;;
-            00) exit 0 ;;
-            *) echo -e "${RED}Opção inválida${RESET}" && sleep 1 ;;
+            07) 
+                show_performance_status
+                ;;
+            08) 
+                menu_config_update
+                ;;
+            09) 
+                submenu_reset
+                ;;
+            00) 
+                echo -e "${GREEN}👋 Saindo...${RESET}"
+                exit 0
+                ;;
+            *) 
+                echo -e "\033[1;31mOpção inválida\033[0m"
+                sleep 1
+                ;;
         esac
     done
 }
 
 # =====================================================
-# FLUXO PRINCIPAL COM SEGURANÇA
+# FLUXO PRINCIPAL COM SEGURANÇA FORTIFICADA
 # =====================================================
+
+# Inicializar log de segurança
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INICIO: Script iniciado" > "$SECURITY_LOG"
 
 verificacao_inicial
 
+# Verificar se já tem licença válida
+if verificar_integridade_licenca && verificar_sessao; then
+    echo -e "${GREEN}✅ Licença válida detectada. Acessando painel...${RESET}"
+    sleep 1
+    menu
+    exit 0
+fi
+
+# Se não tem licença válida, exigir login
 tent=0
-while [ $tent -lt 3 ]; do
+MAX_TENT=3
+
+while [ $tent -lt $MAX_TENT ]; do
     loading_bar
     print_header
     input_login
@@ -1681,12 +1766,24 @@ while [ $tent -lt 3 ]; do
 
     erro_login
     tent=$((tent+1))
-    echo -e "\033[1;33mTentativas restantes: $((3-tent))\033[0m"
-    sleep 1
+    echo -e "\033[1;33mTentativas restantes: $((MAX_TENT-tent))\033[0m"
+    
+    # Log de tentativa falha
+    log_seguranca "TENTATIVA_FALHA_$tent: Usuário=$USER"
+    
+    if [ $tent -ge $MAX_TENT ]; then
+        echo -e "\033[1;31m🚫 Muitas tentativas falhas. Aguarde 60 segundos.\033[0m"
+        log_seguranca "BLOQUEIO_TEMPORARIO: Muitas tentativas falhas"
+        sleep 60
+        tent=0
+    else
+        sleep 2
+    fi
 done
 
-if [ $tent -ge 3 ]; then
+if [ $tent -ge $MAX_TENT ]; then
     echo -e "\033[1;31m❌ Falha ao autenticar. Saindo.\033[0m"
+    log_seguranca "SAIDA: Autenticação falhou após $MAX_TENT tentativas"
     exit 1
 fi
 
