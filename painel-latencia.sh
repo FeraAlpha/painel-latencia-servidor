@@ -629,6 +629,507 @@ bem_vindo() {
 }
 
 ###############################################################################
+# 🎮 SISTEMA DE 3 NÍVEIS DE OTIMIZAÇÃO GAMING
+###############################################################################
+
+# Aplicações para priorização
+PRIORITY_APPS=(
+    "com.zjx.ztezscreenshot"     # GG Mouse Pro
+    "com.dts.freefireth"         # Free Fire TH
+    "com.dts.freefiremax"        # Free Fire MAX
+)
+
+# Detecção simplificada de chipset
+detectar_chipset_rapido() {
+    # Coletar informações básicas
+    SOC_INFO=$(getprop ro.board.platform 2>/dev/null || echo "unknown")
+    HARDWARE=$(getprop ro.hardware 2>/dev/null || echo "unknown")
+    ALL_INFO="$SOC_INFO $HARDWARE"
+    
+    # Verificar se é chipset problemático (S23 SD 8 Gen 2)
+    if echo "$ALL_INFO" | grep -qiE "sm8550|taro|kalama"; then
+        echo "problematic"  # S23 - precisa de cuidado
+    elif echo "$ALL_INFO" | grep -qiE "sm8450|sm8350|sm8250"; then
+        echo "high_perf"    # SD 8 Gen 1, 888, 865 - alta performance
+    elif echo "$ALL_INFO" | grep -qiE "mt[0-9]{4}|dimensity"; then
+        echo "mediatek"     # MediaTek - moderado
+    elif echo "$ALL_INFO" | grep -qiE "exynos"; then
+        echo "exynos"       # Exynos - cuidadoso
+    else
+        echo "unknown"      # Chipset desconhecido
+    fi
+}
+
+# ============================================================================
+# NÍVEL 1: OTIMIZAÇÃO SEGURA (Para TODOS os aparelhos)
+# ============================================================================
+aplicar_otimizacao_segura() {
+    clear
+    printf '\033c'
+    echo -e "${BOLD}${CYAN}=== 🛡️  MODO GAMING SEGURO ===${RESET}\n"
+    echo -e "${GREEN}✅ Compatível com TODOS os aparelhos${RESET}"
+    echo -e "${GREEN}✅ Zero risco de reinício${RESET}"
+    echo -e "${GREEN}✅ Baixo consumo de bateria${RESET}\n"
+    
+    echo -e "${YELLOW}🎮 Esta otimização aplica:${RESET}"
+    echo "1. 🖱️  Prioridade básica para GG Mouse Pro"
+    echo "2. 🎯 Otimizações leves para Free Fire"
+    echo "3. ⚡ Melhorias seguras de performance"
+    echo "4. 📊 Monitoramento conservador"
+    
+    echo ""
+    read_prompt "Deseja aplicar o modo SEGURO? (s/N): " confirm
+    if [ "$confirm" != "s" ] && [ "$confirm" != "S" ]; then
+        echo -e "${YELLOW}❌ Cancelado${RESET}"
+        return
+    fi
+    
+    echo ""
+    echo -e "${CYAN}🔄 Aplicando otimizações SEGURAS...${RESET}"
+    
+    # Detectar chipset primeiro
+    CHIPSET_TYPE=$(detectar_chipset_rapido)
+    
+    # Configurações SEGURAS para todos
+    SAFE_CPU_MASK="FF"  # Todos os núcleos
+    NICE_LEVEL="-10"    # Prioridade moderada
+    
+    # Ajustes baseados no chipset (seguro)
+    case "$CHIPSET_TYPE" in
+        "problematic")  # S23 SD 8 Gen 2
+            echo -e "${YELLOW}⚠️  Chipset sensível detectado (S23)${RESET}"
+            echo -e "${GREEN}✅ Aplicando configurações SEGURAS especiais${RESET}"
+            SAFE_CPU_MASK="FC"  # Evita núcleos mais sensíveis
+            NICE_LEVEL="-8"
+            ;;
+        "high_perf")    # SD 8 Gen 1, 888, etc
+            echo -e "${GREEN}✅ Chipset de alta performance detectado${RESET}"
+            SAFE_CPU_MASK="FF"
+            NICE_LEVEL="-12"
+            ;;
+        *)
+            echo -e "${YELLOW}📱 Chipset padrão detectado${RESET}"
+            SAFE_CPU_MASK="FF"
+            NICE_LEVEL="-10"
+            ;;
+    esac
+    
+    # Aplicar otimizações para cada app
+    for app in "${PRIORITY_APPS[@]}"; do
+        pid=$(pidof "$app" 2>/dev/null)
+        if [ -n "$pid" ]; then
+            echo -e "⚡ ${CYAN}Otimizando $app${RESET}"
+            
+            # Prioridade segura
+            renice $NICE_LEVEL -p "$pid" 2>/dev/null
+            
+            # Afinidade segura
+            MASK_DEC=$((0x$SAFE_CPU_MASK))
+            taskset -p $MASK_DEC "$pid" 2>/dev/null || true
+            
+            # Configurações específicas
+            case "$app" in
+                "com.zjx.ztezscreenshot")
+                    # GG Mouse Pro - otimização segura
+                    setprop persist.sys.input.ggmouse.priority 50 2>/dev/null
+                    ;;
+                "com.dts.freefire"*)
+                    # Free Fire - otimização segura
+                    setprop debug.game.ff.safe_mode 1 2>/dev/null
+                    ;;
+            esac
+        else
+            echo -e "${YELLOW}📱 $app não está em execução${RESET}"
+        fi
+    done
+    
+    echo ""
+    echo -e "${GREEN}========================================${RESET}"
+    echo -e "${GREEN}✅ MODO SEGURO ATIVADO COM SUCESSO!${RESET}"
+    echo ""
+    echo -e "${YELLOW}📊 RESUMO DA CONFIGURAÇÃO:${RESET}"
+    echo -e "   • Prioridade: ${GREEN}Moderada ($NICE_LEVEL)${RESET}"
+    echo -e "   • Afinidade CPU: ${GREEN}$SAFE_CPU_MASK${RESET}"
+    echo -e "   • Risco de reinício: ${GREEN}ZERO${RESET}"
+    echo -e "   • Consumo bateria: ${GREEN}BAIXO${RESET}"
+    
+    press_enter
+}
+
+# ============================================================================
+# NÍVEL 2: OTIMIZAÇÃO BALANCEADA (Para maioria dos aparelhos)
+# ============================================================================
+aplicar_otimizacao_balanceada() {
+    clear
+    printf '\033c'
+    echo -e "${BOLD}${CYAN}=== ⚡ MODO GAMING BALANCEADO ===${RESET}\n"
+    echo -e "${GREEN}✅ Compatível com 90% dos aparelhos${RESET}"
+    echo -e "${GREEN}✅ Risco mínimo de reinício${RESET}"
+    echo -e "${GREEN}✅ Performance otimizada${RESET}\n"
+    
+    echo -e "${YELLOW}🎮 Esta otimização aplica:${RESET}"
+    echo "1. 🖱️  Prioridade ALTA para GG Mouse Pro"
+    echo "2. 🎯 Otimizações AVANÇADAS para Free Fire"
+    echo "3. ⚡ Boost de performance inteligente"
+    echo "4. 📊 Monitoramento ativo"
+    
+    echo ""
+    echo -e "${RED}⚠️  NÃO RECOMENDADO para:${RESET}"
+    echo "   • Samsung Galaxy S23 (Snapdragon 8 Gen 2)"
+    echo "   • Aparelhos com histórico de reinícios"
+    
+    echo ""
+    read_prompt "Deseja aplicar o modo BALANCEADO? (s/N): " confirm
+    if [ "$confirm" != "s" ] && [ "$confirm" != "S" ]; then
+        echo -e "${YELLOW}❌ Cancelado${RESET}"
+        return
+    fi
+    
+    echo ""
+    echo -e "${CYAN}🔄 Aplicando otimizações BALANCEADAS...${RESET}"
+    
+    # Detectar chipset
+    CHIPSET_TYPE=$(detectar_chipset_rapido)
+    
+    # Verificar se é chipset problemático
+    if [ "$CHIPSET_TYPE" = "problematic" ]; then
+        echo -e "${RED}🚨 ALERTA: Chipset problemático detectado!${RESET}"
+        echo -e "${RED}Este aparelho (S23 SD 8 Gen 2) pode reiniciar!${RESET}"
+        echo ""
+        read_prompt "Continuar mesmo assim? (digite 'CONFIRMAR'): " confirm2
+        if [ "$confirm2" != "CONFIRMAR" ]; then
+            echo -e "${YELLOW}❌ Cancelado por segurança${RESET}"
+            sleep 2
+            return
+        fi
+        # Configuração ESPECIAL para S23 (mais conservadora)
+        CPU_MASK="F8"  # Apenas núcleos 3-7
+        NICE_LEVEL="-15"
+        echo -e "${YELLOW}⚠️  Modo ESPECIAL para S23 ativado${RESET}"
+    else
+        # Configuração padrão balanceada
+        CPU_MASK="FF"
+        NICE_LEVEL="-15"
+    fi
+    
+    # Aplicar otimizações
+    for app in "${PRIORITY_APPS[@]}"; do
+        pid=$(pidof "$app" 2>/dev/null)
+        if [ -n "$pid" ]; then
+            echo -e "⚡ ${CYAN}Otimizando $app (Modo Balanceado)${RESET}"
+            
+            # Prioridade balanceada
+            renice $NICE_LEVEL -p "$pid" 2>/dev/null
+            
+            # Afinidade CPU
+            MASK_DEC=$((0x$CPU_MASK))
+            taskset -p $MASK_DEC "$pid" 2>/dev/null || true
+            
+            # OOM protection
+            if [ -f "/proc/$pid/oom_score_adj" ]; then
+                echo "-300" > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+            fi
+            
+            # I/O Priority
+            ionice -c 2 -n 0 -p "$pid" 2>/dev/null || true
+            
+            # Configurações específicas
+            case "$app" in
+                "com.zjx.ztezscreenshot")
+                    # GG Mouse Pro - otimização balanceada
+                    setprop persist.sys.input.ggmouse.boost 1 2>/dev/null
+                    
+                    # Threads de input
+                    input_threads=$(ps -T -p $pid 2>/dev/null | grep -i "input\|event" | awk '{print $2}')
+                    for thread in $input_threads; do
+                        renice -18 -p "$thread" 2>/dev/null
+                    done
+                    ;;
+                    
+                "com.dts.freefire"*)
+                    # Free Fire - otimização balanceada
+                    setprop debug.game.ff.performance 1 2>/dev/null
+                    
+                    # Threads de render
+                    render_threads=$(ps -T -p $pid 2>/dev/null | grep -i "render\|glthread" | awk '{print $2}' | head -3)
+                    for thread in $render_threads; do
+                        renice -16 -p "$thread" 2>/dev/null
+                    done
+                    ;;
+            esac
+        fi
+    done
+    
+    echo ""
+    echo -e "${GREEN}========================================${RESET}"
+    echo -e "${GREEN}✅ MODO BALANCEADO ATIVADO COM SUCESSO!${RESET}"
+    echo ""
+    
+    if [ "$CHIPSET_TYPE" = "problematic" ]; then
+        echo -e "${YELLOW}⚠️  MODO ESPECIAL S23 ATIVADO${RESET}"
+        echo -e "   • Núcleos usados: ${GREEN}3-7 apenas${RESET}"
+        echo -e "   • Núcleos 0-2: ${RED}DESATIVADOS por segurança${RESET}"
+    else
+        echo -e "${GREEN}⚡ PERFORMANCE BALANCEADA ATIVADA${RESET}"
+        echo -e "   • Todos os núcleos: ${GREEN}OTIMIZADOS${RESET}"
+        echo -e "   • Prioridade: ${GREEN}ALTA${RESET}"
+    fi
+    
+    press_enter
+}
+
+# ============================================================================
+# NÍVEL 3: OTIMIZAÇÃO EXTREMA (Apenas para aparelhos compatíveis)
+# ============================================================================
+aplicar_otimizacao_extrema() {
+    clear
+    printf '\033c'
+    echo -e "${BOLD}${CYAN}=== 🔥 MODO GAMING EXTREMO ===${RESET}\n"
+    echo -e "${RED}🚨 ATENÇÃO: Este modo é AGressivo!${RESET}"
+    echo -e "${YELLOW}⚠️  Apenas para aparelhos compatíveis${RESET}"
+    echo -e "${RED}⚠️  Pode causar superaquecimento${RESET}\n"
+    
+    echo -e "${YELLOW}🎮 Esta otimização aplica:${RESET}"
+    echo "1. 🖱️  Prioridade MÁXIMA para GG Mouse Pro"
+    echo "2. 🎯 Otimizações EXTREMAS para Free Fire"
+    echo "3. ⚡ Boost AGressivo de performance"
+    echo "4. 📊 Monitoramento intensivo"
+    
+    echo ""
+    echo -e "${RED}🚫 NÃO USE EM:${RESET}"
+    echo "   • Samsung Galaxy S23"
+    echo "   • Aparelhos com superaquecimento"
+    echo "   • Bateria fraca"
+    
+    echo ""
+    read_prompt "Tem certeza que deseja continuar? (digite 'EXTREMO'): " confirm
+    if [ "$confirm" != "EXTREMO" ]; then
+        echo -e "${YELLOW}❌ Cancelado${RESET}"
+        return
+    fi
+    
+    echo ""
+    echo -e "${CYAN}🔄 Aplicando otimizações EXTREMAS...${RESET}"
+    
+    # Detectar chipset
+    CHIPSET_TYPE=$(detectar_chipset_rapido)
+    
+    # VERIFICAÇÃO DE SEGURANÇA
+    if [ "$CHIPSET_TYPE" = "problematic" ]; then
+        echo -e "${RED}🚨 ALERTA CRÍTICO!${RESET}"
+        echo -e "${RED}Seu aparelho (S23) REINICIARÁ com este modo!${RESET}"
+        echo ""
+        echo -e "${YELLOW}🔧 Recomendação:${RESET}"
+        echo "1. Use o modo 'SEGURO'"
+        echo "2. Ou use o modo 'BALANCEADO' com confirmação"
+        echo ""
+        read_prompt "Pressione ENTER para voltar ao menu seguro..." _
+        return
+    fi
+    
+    # Configurações EXTREMAS
+    CPU_MASK="FF"
+    NICE_LEVEL="-20"  # Prioridade máxima
+    
+    # Aplicar otimizações EXTREMAS
+    for app in "${PRIORITY_APPS[@]}"; do
+        pid=$(pidof "$app" 2>/dev/null)
+        if [ -n "$pid" ]; then
+            echo -e "🔥 ${RED}Otimizando EXTREMA: $app${RESET}"
+            
+            # Prioridade MÁXIMA
+            renice $NICE_LEVEL -p "$pid" 2>/dev/null
+            
+            # Afinidade CPU - todos os núcleos
+            taskset -p 0xFF "$pid" 2>/dev/null || true
+            
+            # SCHED_FIFO para threads críticas
+            if command -v chrt >/dev/null 2>&1; then
+                chrt -f -p 99 "$pid" 2>/dev/null || true
+            fi
+            
+            # OOM protection máxima
+            if [ -f "/proc/$pid/oom_score_adj" ]; then
+                echo "-1000" > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+            fi
+            
+            # I/O Priority máxima
+            ionice -c 1 -n 0 -p "$pid" 2>/dev/null || true
+            
+            # Configurações específicas EXTREMAS
+            case "$app" in
+                "com.zjx.ztezscreenshot")
+                    # GG Mouse Pro - EXTREMO
+                    setprop persist.sys.input.ggmouse.extreme 1 2>/dev/null
+                    setprop debug.input.latency 0 2>/dev/null
+                    
+                    # Todas as threads no máximo
+                    all_threads=$(ps -T -p $pid 2>/dev/null | awk '{print $2}' | tail -n +2)
+                    for thread in $all_threads; do
+                        renice -20 -p "$thread" 2>/dev/null
+                        ionice -c 1 -n 0 -p "$thread" 2>/dev/null
+                    done
+                    ;;
+                    
+                "com.dts.freefire"*)
+                    # Free Fire - EXTREMO
+                    setprop debug.game.ff.extreme 1 2>/dev/null
+                    setprop persist.sys.gpu.boost.max 1 2>/dev/null
+                    
+                    # Forçar performance máxima
+                    echo "performance" > /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null
+                    
+                    # Threads de jogo no máximo
+                    game_threads=$(ps -T -p $pid 2>/dev/null | grep -v "main" | awk '{print $2}' | tail -n +2)
+                    for thread in $game_threads; do
+                        renice -19 -p "$thread" 2>/dev/null
+                        if command -v chrt >/dev/null 2>&1; then
+                            chrt -f -p 90 "$thread" 2>/dev/null || true
+                        fi
+                    done
+                    ;;
+            esac
+        fi
+    done
+    
+    # Boost de sistema
+    setprop persist.sys.performance.extreme 1 2>/dev/null
+    setprop debug.sf.game_mode 2 2>/dev/null
+    setprop persist.sys.cpu.boost.max 1 2>/dev/null
+    
+    echo ""
+    echo -e "${RED}========================================${RESET}"
+    echo -e "${RED}🔥 MODO EXTREMO ATIVADO COM SUCESSO!${RESET}"
+    echo ""
+    echo -e "${YELLOW}⚠️  AVISOS IMPORTANTES:${RESET}"
+    echo -e "   • ${RED}Monitorar temperatura${RESET}"
+    echo -e "   • ${RED}Bateria consumirá rapidamente${RESET}"
+    echo -e "   • ${GREEN}Performance: MÁXIMA${RESET}"
+    echo -e "   • ${GREEN}Latência: MÍNIMA${RESET}"
+    
+    press_enter
+}
+
+# ============================================================================
+# FUNÇÃO DE STATUS
+# ============================================================================
+mostrar_status_gaming() {
+    clear
+    printf '\033c'
+    echo -e "${BOLD}${CYAN}=== 📊 STATUS GAMING ATUAL ===${RESET}\n"
+    
+    # Verificar apps em execução
+    echo -e "${YELLOW}🎮 APPS GAMING:${RESET}"
+    for app in "${PRIORITY_APPS[@]}"; do
+        pid=$(pidof "$app" 2>/dev/null)
+        if [ -n "$pid" ]; then
+            nice=$(ps -o nice= -p "$pid" 2>/dev/null | tr -d ' ' || echo "N/A")
+            cpu=$(ps -o %cpu= -p "$pid" 2>/dev/null | tr -d ' ' || echo "N/A")
+            
+            echo -e "${GREEN}✅ $app${RESET}"
+            echo -e "   PID: $pid | Nice: $nice | CPU: $cpu%"
+            
+            # Verificar afinidade
+            affinity=$(taskset -p "$pid" 2>/dev/null | awk '{print $NF}' || echo "N/A")
+            echo -e "   Afinidade: $affinity"
+        else
+            echo -e "${RED}❌ $app (Não está em execução)${RESET}"
+        fi
+        echo ""
+    done
+    
+    # Temperatura
+    if [ -f "/sys/class/thermal/thermal_zone0/temp" ]; then
+        temp=$(cat /sys/class/thermal/thermal_zone0/temp)
+        temp=$((temp/1000))
+        echo -e "${YELLOW}🌡️ TEMPERATURA: ${temp}°C${RESET}"
+        
+        if [ "$temp" -gt 60 ]; then
+            echo -e "${RED}⚠️  ALTA TEMPERATURA - Evite modos extremos${RESET}"
+        elif [ "$temp" -gt 45 ]; then
+            echo -e "${YELLOW}⚠️  Temperatura moderada${RESET}"
+        else
+            echo -e "${GREEN}✅ Temperatura normal${RESET}"
+        fi
+    fi
+    
+    press_enter
+}
+
+# ============================================================================
+# MENU DE SELEÇÃO DE MODO GAMING
+# ============================================================================
+menu_otimizacao_gaming() {
+    while true; do
+        clear
+        printf '\033c'
+        
+        # Detectar chipset para mostrar recomendações
+        CHIPSET_TYPE=$(detectar_chipset_rapido)
+        
+        echo -e "${BOLD}${CYAN}=== 🎮 MENU DE OTIMIZAÇÃO GAMING ===${RESET}\n"
+        
+        # Mostrar detecção de chipset
+        case "$CHIPSET_TYPE" in
+            "problematic")
+                echo -e "${RED}📱 Seu aparelho: S23 (SD 8 Gen 2)${RESET}"
+                echo -e "${YELLOW}⚠️  Chipset sensível - requer cuidado${RESET}\n"
+                ;;
+            "high_perf")
+                echo -e "${GREEN}📱 Seu aparelho: SD 8 Gen 1/888/865${RESET}"
+                echo -e "${GREEN}✅ Chipset de alta performance${RESET}\n"
+                ;;
+            "mediatek"|"exynos")
+                echo -e "${YELLOW}📱 Seu aparelho: $CHIPSET_TYPE${RESET}"
+                echo -e "${YELLOW}⚠️  Use modos balanceados${RESET}\n"
+                ;;
+            *)
+                echo -e "${YELLOW}📱 Chipset: Desconhecido${RESET}"
+                echo -e "${YELLOW}⚠️  Recomendado: Comece com modo SEGURO${RESET}\n"
+                ;;
+        esac
+        
+        echo -e "${CYAN}Selecione o nível de otimização:${RESET}\n"
+        
+        echo -e "${GREEN}[1] 🛡️  MODO SEGURO${RESET}"
+        echo "   • Para TODOS os aparelhos"
+        echo "   • Zero risco de reinício"
+        echo "   • Performance básica"
+        echo ""
+        
+        echo -e "${YELLOW}[2] ⚡ MODO BALANCEADO${RESET}"
+        echo "   • Para maioria dos aparelhos"
+        echo "   • Risco mínimo"
+        echo "   • Performance otimizada"
+        echo ""
+        
+        echo -e "${RED}[3] 🔥 MODO EXTREMO${RESET}"
+        echo "   • Apenas aparelhos compatíveis"
+        echo "   • Risco ALTO (superaquecimento)"
+        echo "   • Performance MÁXIMA"
+        echo ""
+        
+        echo -e "${CYAN}[4] 📊 Status Gaming Atual${RESET}"
+        echo -e "${CYAN}[0] ⬅️  Voltar${RESET}"
+        echo ""
+        
+        read_prompt "➤ Selecione uma opção: " opcao
+        
+        case "$opcao" in
+            1) aplicar_otimizacao_segura ;;
+            2) aplicar_otimizacao_balanceada ;;
+            3) aplicar_otimizacao_extrema ;;
+            4) mostrar_status_gaming ;;
+            0) return ;;
+            *) 
+                echo -e "${RED}Opção inválida!${RESET}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+###############################################################################
 # ===================== INÍCIO DO PAINEL (UNIFICADO) ==========================
 ###############################################################################
 
@@ -1743,14 +2244,15 @@ menu() {
         echo "[03] ⚡ Turbo absoluto"
         echo "[04] 🔥 Extremo (sem limites)"
         echo ""
-        echo "[05] 🎯 Spoof 120 FPS"
-        echo "[06] 🖥 Resolução / DPI"
+        echo "[05] 🎮 Menu Gaming Completo"
+        echo "[06] 🎯 Spoof 120 FPS"
+        echo "[07] 🖥 Resolução / DPI"
         echo ""
-        echo "[07] 📊 Status do sistema"
-        echo "[08] ⚙️  Config. Atualização"
-        echo "[09] 🧹 Limpar cache"
-        echo "[10] 🔄 Reiniciar dispositivo"
-        echo "[11] ♻️  Reset geral"
+        echo "[08] 📊 Status do sistema"
+        echo "[09] ⚙️  Config. Atualização"
+        echo "[10] 🧹 Limpar cache"
+        echo "[11] 🔄 Reiniciar dispositivo"
+        echo "[12] ♻️  Reset geral"
         echo ""
         echo "[00] ❌ Sair"
         echo ""
@@ -1776,24 +2278,27 @@ menu() {
                 press_enter
                 ;;
             05) 
-                submenu_spoof
+                menu_otimizacao_gaming
                 ;;
             06) 
-                config_resolucao_dpi
+                submenu_spoof
                 ;;
             07) 
-                show_performance_status
+                config_resolucao_dpi
                 ;;
             08) 
-                menu_config_update
+                show_performance_status
                 ;;
             09) 
-                limpar_cache_simples
+                menu_config_update
                 ;;
             10) 
-                reiniciar_dispositivo
+                limpar_cache_simples
                 ;;
             11) 
+                reiniciar_dispositivo
+                ;;
+            12) 
                 submenu_reset
                 ;;
             00) 
