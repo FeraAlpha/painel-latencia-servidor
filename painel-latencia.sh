@@ -109,7 +109,7 @@ setprop persist.input.pointer_jitter_smoothing 0
 setprop persist.sys.input.low_latency_mode 0
 setprop persist.sys.input.high_update_rate false
 setprop persist.sys.input.boost 0
-setprop debug.hwui.disable_vsync 1
+setprop debug.hwui.disable_vsync 0
 setprop persist.sys.gpu.low_latency 0
 setprop persist.sys.gpu.frame_boost 0
 setprop persist.sys.display.force_refresh 60
@@ -130,6 +130,7 @@ setprop debug.sf.high_fps_late.sf.duration 0
 setprop debug.hwui.skip_vsync 0
 setprop persist.sys.input.priority 0
 setprop persist.sys.input.urgent 0
+setprop sem_enhanced_cpu_responsiveness 0
 # Novas propriedades para remover
 setprop debug.input.low_latency 0
 setprop debug.input.no_buffer 0
@@ -141,16 +142,12 @@ setprop persist.input.resample 1
 setprop persist.sys.input.dispatch_fast 0
 setprop vendor.usb.hid.report_rate 0
 setprop persist.sys.input.priority 0
-# Novas propriedades de latch removidas
+# Novas propriedades de latch
 setprop debug.sf.latch_unsignaled 0
 setprop persist.game.frame_stability 0
 setprop persist.sys.cpu.boost 0
-# Remover animações
-settings delete global window_animation_scale
-settings delete global transition_animation_scale
-settings delete global animator_duration_scale
 rm -rf "$MODDIR/disabled_flags"
-rm -f "$MODDIR/system.prop"
+rm -f "$MODDIR/system.prop" "$MODDIR/spoof_enabled"
 rm -f "$MODDIR/original.props"
 rm -f "$MODDIR/license_info"
 rm -f "$MODDIR/license_signature"
@@ -374,6 +371,16 @@ verificacao_inicial() {
     SCRIPT_HASH=$(sha256sum "$0" 2>/dev/null | awk '{print $1}' || echo "")
     if [ -n "$SCRIPT_HASH" ]; then
         log_seguranca "SCRIPT_HASH: $SCRIPT_HASH"
+    fi
+    
+    echo "🔍 Verificando configurações de spoof..."
+    if [ -f "$SPOOF_FLAG" ] || ( [ -f "$SPOOF_FILE" ] && grep -q "ro.product.model=RMX5101" "$SPOOF_FILE" 2>/dev/null ); then
+        echo -e "\033[1;33m📱 Spoof Realme 15 Pro detectado.\033[0m"
+        echo -e "\033[1;36mℹ️  Você pode gerenciar o spoof após o login.\033[0m"
+        echo ""
+    else
+        echo -e "\033[1;32m✅ Spoof não está ativo\033[0m"
+        echo ""
     fi
     
     return 0
@@ -637,8 +644,13 @@ ICON_ON="🟢"
 ICON_OFF="🔴"
 ARROW="➤"
 
+SPOOF_FLAG="$MODDIR/spoof_enabled"
+SPOOF_FILE="$MODDIR/system.prop"
+ORIG_STORE="$MODDIR/original.props"
 FLAG_DIR="$MODDIR/disabled_flags"
 mkdir -p "$FLAG_DIR" 2>/dev/null
+
+salvar_props_originais
 
 ENABLED_TWEAKS_FILE="$MODDIR/enabled_tweaks.txt"
 
@@ -646,9 +658,27 @@ ENABLED_TWEAKS_FILE="$MODDIR/enabled_tweaks.txt"
 # GERENCIAMENTO CENTRALIZADO DE PROPS
 # =====================================================
 
+rebuild_spoof_only() {
+    rm -f "$SPOOF_FILE" 2>/dev/null
+    touch "$SPOOF_FILE" 2>/dev/null
+
+    if [ -f "$SPOOF_FLAG" ]; then
+        echo -e "\n# Spoof Realme 15 Pro\n" >> "$SPOOF_FILE"
+        cat >> "$SPOOF_FILE" <<'EOF'
+ro.product.model=RMX5101
+ro.product.brand=realme
+ro.product.name=realme15pro
+ro.product.device=RMX5101
+ro.product.manufacturer=realme
+EOF
+    fi
+
+    chmod 644 "$SPOOF_FILE" 2>/dev/null
+}
+
 append_tweaks_props() {
-    touch "$MODDIR/system.prop" 2>/dev/null
-    echo -e "\n# Tweaks de Propriedades Ativos\n" >> "$MODDIR/system.prop"
+    touch "$SPOOF_FILE" 2>/dev/null
+    echo -e "\n# Tweaks de Propriedades Ativos\n" >> "$SPOOF_FILE"
 
     TWEAK_PROPS=(
         "USB RAW=vendor.usb.raw_input.enable=1"
@@ -661,18 +691,22 @@ append_tweaks_props() {
         "Mouse Resposta Linear=persist.sys.mouse.linear_response=1"
         "Mouse Aceleração OFF=persist.sys.pointer.acceleration=0"
         "Input Low Latency Mode=persist.sys.input.low_latency_mode=1"
-        "VSync OFF=debug.hwui.disable_vsync=1"
+        "VSync OFF=debug.hwui.disable_vsync=0"
         "GPU Low Latency=persist.sys.gpu.low_latency=1"
         "GPU Frame Boost=persist.sys.gpu.frame_boost=1"
         "HID Fastpath=vendor.hid.input.fastpath=1"
+        "USB Performance Mode=vendor.usb.performance_mode=1"
+        "USB Low Latency Interrupts=persist.vendor.usb.low_latency_interrupts=1"
         "Input Dispatch Fast=persist.sys.input.dispatch_fast=1"
         "HID Polling Rate=persist.vendor.hid.polling_rate=1000"
+        "CPU Responsividade Aprimorada=sem_enhanced_cpu_responsiveness=1"
         # Novas propriedades adicionadas
         "Debug Input Low Latency=debug.input.low_latency=1"
         "Debug Input No Buffer=debug.input.no_buffer=1"
-        "Animações desativadas=settings:global:window_animation_scale=0"
-        "Transições desativadas=settings:global:transition_animation_scale=0"
-        "Animador desativado=settings:global:animator_duration_scale=0"
+        # Novas propriedades de latch
+        "Debug SF Latch Unsignaled=debug.sf.latch_unsignaled=1"
+        "Persist Game Frame Stability=persist.game.frame_stability=1"
+        "Persist Sys CPU Boost=persist.sys.cpu.boost=1"
     )
 
     for TWEAK in "${TWEAK_PROPS[@]}"; do
@@ -694,36 +728,41 @@ append_tweaks_props() {
 
         if [ ! -f "$FLAG_DIR/$NOME" ]; then
             prop_key=$(echo "$PROP_VAL" | cut -d'=' -f1)
-            if grep -q "^${prop_key}=" "$MODDIR/system.prop" 2>/dev/null; then
-                sed -i "s|^${prop_key}=.*|${PROP_VAL}|" "$MODDIR/system.prop" 2>/dev/null || true
+            if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
+                sed -i "s|^${prop_key}=.*|${PROP_VAL}|" "$SPOOF_FILE" 2>/dev/null || true
             else
-                echo "$PROP_VAL" >> "$MODDIR/system.prop"
+                echo "$PROP_VAL" >> "$SPOOF_FILE"
             fi
             setprop "$prop_key" "$(echo "$PROP_VAL" | cut -d'=' -f2)" 2>/dev/null
         fi
     done
 
-    chmod 644 "$MODDIR/system.prop" 2>/dev/null
+    chmod 644 "$SPOOF_FILE" 2>/dev/null
+}
+
+rebuild_system_prop() {
+    rebuild_spoof_only
+    append_tweaks_props
 }
 
 add_prop_line() {
     prop_key="$1"
     prop_value="$2"
     if [ -z "$prop_key" ]; then return; fi
-    touch "$MODDIR/system.prop" 2>/dev/null
-    if grep -q "^${prop_key}=" "$MODDIR/system.prop" 2>/dev/null; then
-        sed -i "s|^${prop_key}=.*|${prop_key}=${prop_value}|" "$MODDIR/system.prop" 2>/dev/null || true
+    touch "$SPOOF_FILE" 2>/dev/null
+    if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
+        sed -i "s|^${prop_key}=.*|${prop_key}=${prop_value}|" "$SPOOF_FILE" 2>/dev/null || true
     else
-        echo "${prop_key}=${prop_value}" >> "$MODDIR/system.prop"
+        echo "${prop_key}=${prop_value}" >> "$SPOOF_FILE"
     fi
-    chmod 644 "$MODDIR/system.prop" 2>/dev/null
+    chmod 644 "$SPOOF_FILE" 2>/dev/null
 }
 
 remove_prop_line() {
     prop_key="$1"
-    [ -f "$MODDIR/system.prop" ] || return
-    if grep -q "^${prop_key}=" "$MODDIR/system.prop" 2>/dev/null; then
-        sed -i "/^${prop_key}=/d" "$MODDIR/system.prop" 2>/dev/null || true
+    [ -f "$SPOOF_FILE" ] || return
+    if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
+        sed -i "/^${prop_key}=/d" "$SPOOF_FILE" 2>/dev/null || true
     fi
 }
 
@@ -844,14 +883,18 @@ map_tweak_to_cmd() {
         "Prioridade de vídeo externa") echo "$submenu_26_cmd_on" ;;
         "Gamepad: baixa latência") echo "$submenu_28_cmd_on" ;;
         "Fastpath HID (rota direta)") echo "$submenu_31_cmd_on" ;;
+        "Modo desempenho USB") echo "$submenu_35_cmd_on" ;;
+        "Interrupções USB baixa latência") echo "$submenu_36_cmd_on" ;;
         "Despacho rápido de input") echo "$submenu_38_cmd_on" ;;
         "Polling Rate HID (1000Hz)") echo "$submenu_51_cmd_on" ;;
+        "CPU Responsividade Aprimorada") echo "$submenu_56_cmd_on" ;;
         # Novos tweaks
         "Debug Input Low Latency") echo "$submenu_57_cmd_on" ;;
         "Debug Input No Buffer") echo "$submenu_58_cmd_on" ;;
-        "Animações desativadas") echo "$submenu_66_cmd_on" ;;
-        "Transições desativadas") echo "$submenu_67_cmd_on" ;;
-        "Animador desativado") echo "$submenu_68_cmd_on" ;;
+        # Novas propriedades de latch
+        "Debug SF Latch Unsignaled") echo "$submenu_63_cmd_on" ;;
+        "Persist Game Frame Stability") echo "$submenu_64_cmd_on" ;;
+        "Persist Sys CPU Boost") echo "$submenu_65_cmd_on" ;;
         *) echo "" ;;
     esac
 }
@@ -867,6 +910,72 @@ apply_enabled_tweaks_from_file() {
             eval "$cmd"
         fi
     done < "$ENABLED_TWEAKS_FILE"
+}
+
+save_original_props() {
+    {
+        echo "ro.product.model=$(getprop ro.product.model 2>/dev/null)"
+        echo "ro.product.brand=$(getprop ro.product.brand 2>/dev/null)"
+        echo "ro.product.name=$(getprop ro.product.name 2>/dev/null)"
+        echo "ro.product.device=$(getprop ro.product.device 2>/dev/null)"
+        echo "ro.product.manufacturer=$(getprop ro.product.manufacturer 2>/dev/null)"
+    } > "$ORIG_STORE"
+    chmod 644 "$ORIG_STORE" 2>/dev/null
+}
+
+enable_spoof() {
+    if [ ! -f "$ORIG_STORE" ]; then
+        save_original_props
+    fi
+
+    touch "$SPOOF_FLAG"
+    rebuild_spoof_only
+
+    echo -e "${GREEN}✔ Spoof Realme 15 Pro ativado.${RESET}"
+    echo -e "${YELLOW}Obs: Algumas mudanças de prop só aplicam após reboot de apps/sistema.${RESET}"
+}
+
+disable_spoof() {
+    rm -f "$SPOOF_FLAG"
+    rebuild_spoof_only
+
+    echo -e "${GREEN}✔ Spoof desativado — sistema voltará aos valores originais (ou após reboot).${RESET}"
+}
+
+spoof_status() {
+    if [ -f "$SPOOF_FLAG" ] && [ -f "$SPOOF_FILE" ]; then
+        return 0
+    fi
+    return 1
+}
+
+submenu_spoof() {
+    while true; do
+        clear
+        printf '\033c'
+        echo -e "${BOLD}${CYAN}=== Ativar / Desativar Spoof 120 FPS (Realme 15 Pro) ===${RESET}\n"
+        if spoof_status; then
+            echo -e "${GREEN}Status: Ativado${RESET}\n"
+            echo "1) Desativar spoof (remover spoof do módulo)"
+        else
+            echo -e "${RED}Status: Desativado${RESET}\n"
+            echo "1) Ativar spoof (aplicar spoof Realme 15 Pro)"
+        fi
+        echo "0) Voltar"
+        read_prompt "> " __op
+        case "$__op" in
+            1)
+                if spoof_status; then
+                    disable_spoof
+                else
+                    enable_spoof
+                fi
+                press_enter
+                ;;
+            0) break ;;
+            *) echo -e "${RED}Opção inválida${RESET}"; sleep 1 ;;
+        esac
+    done
 }
 
 toggle_tweak() {
@@ -917,7 +1026,7 @@ submenu_7_cmd_off="setprop vendor.usb.raw_input.enable 0"
 submenu_8_cmd_on="setprop persist.usb.low_latency_mode 1"
 submenu_8_cmd_off="setprop persist.usb.low_latency_mode 0"
 submenu_9_cmd_on="setprop vendor.usb.hid.priority 1"
-submenu_9_cmd_off="setprop vendor.usb.hid.priority 0"
+submenu_9_cmd_off="setprop vendor.usb.hid.priority 1"
 submenu_10_cmd_on="setprop persist.vendor.usb.high_speed 1"
 submenu_10_cmd_off="setprop persist.vendor.usb.high_speed 0"
 submenu_11_cmd_on="setprop persist.vendor.usb.power 1"
@@ -935,8 +1044,8 @@ submenu_15_cmd_off="setprop persist.sys.pointer.acceleration 1"
 submenu_17_cmd_on="setprop persist.sys.input.low_latency_mode 1"
 submenu_17_cmd_off="setprop persist.sys.input.low_latency_mode 0"
 
-submenu_20_cmd_on="setprop debug.hwui.disable_vsync 1"
-submenu_20_cmd_off="setprop debug.hwui.disable_vsync 0"
+submenu_20_cmd_on="setprop debug.hwui.disable_vsync 0"
+submenu_20_cmd_off="setprop debug.hwui.disable_vsync 1"
 submenu_21_cmd_on="setprop persist.sys.gpu.low_latency 1"
 submenu_21_cmd_off="setprop persist.sys.gpu.low_latency 0"
 submenu_22_cmd_on="setprop persist.sys.gpu.frame_boost 1"
@@ -951,10 +1060,15 @@ submenu_26_cmd_on="setprop vendor.display.external_priority 1"
 submenu_26_cmd_off="setprop vendor.display.external_priority 0"
 
 submenu_28_cmd_on="settings put global gamepad.latency_reduction 1"
-submenu_28_cmd_off="settings delete global gamepad.latency_reduction"
+submenu_28_cmd_off="settings delete global gamepad.latencia_reduction"
 
 submenu_31_cmd_on="setprop vendor.hid.input.fastpath 1"
 submenu_31_cmd_off="setprop vendor.hid.input.fastpath 0"
+
+submenu_35_cmd_on="setprop vendor.usb.performance_mode 1"
+submenu_35_cmd_off="setprop vendor.usb.performance_mode 0"
+submenu_36_cmd_on="setprop persist.vendor.usb.low_latency_interrupts 1"
+submenu_36_cmd_off="setprop persist.vendor.usb.low_latency_interrupts 0"
 
 submenu_38_cmd_on="setprop persist.sys.input.dispatch_fast 1"
 submenu_38_cmd_off="setprop persist.sys.input.dispatch_fast 0"
@@ -962,20 +1076,25 @@ submenu_38_cmd_off="setprop persist.sys.input.dispatch_fast 0"
 submenu_51_cmd_on="setprop persist.vendor.hid.polling_rate 1000"
 submenu_51_cmd_off="setprop persist.vendor.hid.polling_rate 0"
 
+submenu_56_cmd_on="setprop sem_enhanced_cpu_responsiveness 1"
+submenu_56_cmd_off="setprop sem_enhanced_cpu_responsiveness 0"
+
+# Novos comandos adicionados
 submenu_57_cmd_on="setprop debug.input.low_latency 1"
 submenu_57_cmd_off="setprop debug.input.low_latency 0"
 
 submenu_58_cmd_on="setprop debug.input.no_buffer 1"
 submenu_58_cmd_off="setprop debug.input.no_buffer 0"
 
-submenu_66_cmd_on="settings put global window_animation_scale 0"
-submenu_66_cmd_off="settings delete global window_animation_scale"
+# Novas propriedades de latch
+submenu_63_cmd_on="setprop debug.sf.latch_unsignaled 1"
+submenu_63_cmd_off="setprop debug.sf.latch_unsignaled 0"
 
-submenu_67_cmd_on="settings put global transition_animation_scale 0"
-submenu_67_cmd_off="settings delete global transition_animation_scale"
+submenu_64_cmd_on="setprop persist.game.frame_stability 1"
+submenu_64_cmd_off="setprop persist.game.frame_stability 0"
 
-submenu_68_cmd_on="settings put global animator_duration_scale 0"
-submenu_68_cmd_off="settings delete global animator_duration_scale"
+submenu_65_cmd_on="setprop persist.sys.cpu.boost 1"
+submenu_65_cmd_off="setprop persist.sys.cpu.boost 0"
 
 apply_safe_performance() {
     echo -e "${CYAN}${ARROW} Ativando modo PERFORMANCE ULTRA SEGURO...${RESET}"
@@ -1182,7 +1301,7 @@ submenu_reset() {
 
     setprop vendor.usb.raw_input.enable 0
     setprop persist.usb.low_latency_mode 0
-    setprop vendor.usb.hid.priority 0
+    setprop vendor.usb.hid.priority 1
     setprop persist.vendor.usb.high_speed 0
     setprop persist.vendor.usb.power 0
     setprop vendor.usb.hub.boost 0
@@ -1192,6 +1311,7 @@ submenu_reset() {
     setprop persist.sys.pointer.acceleration 1
 
     setprop persist.sys.input.low_latency_mode 0
+    setprop persist.sys.input.high_update_rate false
 
     setprop debug.hwui.disable_vsync 0
     setprop persist.sys.gpu.low_latency 0
@@ -1203,6 +1323,8 @@ submenu_reset() {
     setprop vendor.hid.input.fastpath 0
     setprop persist.sys.input.filter 1
     setprop persist.sys.input.resample 1
+    setprop vendor.usb.performance_mode 0
+    setprop persist.vendor.usb.low_latency_interrupts 0
     setprop persist.sys.input.dispatch_fast 0
     
     setprop persist.vendor.hid.polling_rate 0
@@ -1217,6 +1339,7 @@ submenu_reset() {
     
     setprop debug.hwui.skip_vsync 0
     setprop persist.sys.input.urgent 0
+    setprop sem_enhanced_cpu_responsiveness 0
     
     # Remover novas propriedades
     setprop debug.input.low_latency 0
@@ -1226,22 +1349,13 @@ submenu_reset() {
     settings delete global input.instant_touch_response
     settings delete global pointer.precision
 
-    # Remover propriedades de latch
+    # Novas propriedades de latch
     setprop debug.sf.latch_unsignaled 0
     setprop persist.game.frame_stability 0
     setprop persist.sys.cpu.boost 0
 
-    # Remover propriedades removidas
-    setprop vendor.usb.performance_mode 0
-    setprop persist.vendor.usb.low_latency_interrupts 0
-
-    # Remover animações
-    settings delete global window_animation_scale
-    settings delete global transition_animation_scale
-    settings delete global animator_duration_scale
-
     rm -rf "$FLAG_DIR" 2>/dev/null
-    rm -f "$MODDIR/system.prop" "$MODDIR/original.props" 2>/dev/null
+    rm -f "$SPOOF_FILE" "$SPOOF_FLAG" "$ORIG_STORE" 2>/dev/null
     rm -f "$MODDIR/enable_on_boot"
     rm -f "$ENABLED_TWEAKS_FILE"
 
@@ -1277,20 +1391,22 @@ if [ "$1" = "--ativar-todos" ]; then
     apply_if_enabled "Gamepad Redução de latência" "settings put global gamepad.latency_reduction 1"
 
     echo -e "${CYAN}Garantindo persistência e aplicando Propriedades...${RESET}"
-    append_tweaks_props
+    rebuild_system_prop
 
     apply_if_enabled "Polling Rate HID (1000Hz)" "setprop persist.vendor.hid.polling_rate 1000"
+
+    apply_if_enabled "CPU Responsividade Aprimorada" "setprop sem_enhanced_cpu_responsiveness 1"
     
     # Aplicar novos tweaks
     apply_if_enabled "Debug Input Low Latency" "setprop debug.input.low_latency 1"
     apply_if_enabled "Debug Input No Buffer" "setprop debug.input.no_buffer 1"
     
-    # Aplicar animações desativadas
-    apply_if_enabled "Animações desativadas" "settings put global window_animation_scale 0"
-    apply_if_enabled "Transições desativadas" "settings put global transition_animation_scale 0"
-    apply_if_enabled "Animador desativado" "settings put global animator_duration_scale 0"
+    # Aplicar novas propriedades de latch
+    apply_if_enabled "Debug SF Latch Unsignaled" "setprop debug.sf.latch_unsignaled 1"
+    apply_if_enabled "Persist Game Frame Stability" "setprop persist.game.frame_stability 1"
+    apply_if_enabled "Persist Sys CPU Boost" "setprop persist.sys.cpu.boost 1"
 
-    echo -e "${GREEN}✔ Todos os tweaks aplicados.${RESET}"
+    echo -e "${GREEN}✔ Todos os tweaks aplicados (spoof NÃO foi ativado).${RESET}"
     exit 0
 fi
 
@@ -1302,6 +1418,9 @@ if [ "$1" = "--boot" ]; then
     fi
     
     apply_enabled_tweaks_from_file
+    if [ -f "$SPOOF_FLAG" ]; then
+        enable_spoof
+    fi
     exit 0
 fi
 
@@ -1343,7 +1462,7 @@ menu_todos_tweaks() {
         echo ""
 
         # Grupo 4: VSync/GPU
-        printf " %b [17] 🚫 VSync desligado\n" "$(icon check_prop debug.hwui.disable_vsync 1)"
+        printf " %b [17] 🚫 VSync desligado\n" "$(icon check_prop debug.hwui.disable_vsync 0)"
         printf " %b [18] 🎮 GPU baixa latência\n" "$(icon check_prop persist.sys.gpu.low_latency 1)"
         printf " %b [19] 🧩 GPU aceleração quadros\n" "$(icon check_prop persist.sys.gpu.frame_boost 1)"
         echo ""
@@ -1357,22 +1476,32 @@ menu_todos_tweaks() {
         # Grupo 6: Gamepad/HID
         printf " %b [23] 🎮 Gamepad baixa latência\n" "$(icon check_setting global gamepad.latency_reduction 1)"
         printf " %b [24] 🛣 Fastpath HID\n" "$(icon check_prop vendor.hid.input.fastpath 1)"
-        printf " %b [25] 🚀 Despacho rápido input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
+        printf " %b [25] ⚡ USB modo desempenho\n" "$(icon check_prop vendor.usb.performance_mode 1)"
+        printf " %b [26] ⏱ IRQ USB baixa latência\n" "$(icon check_prop persist.vendor.usb.low_latency_interrupts 1)"
+        printf " %b [27] 🚀 Despacho rápido input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
         echo ""
 
-        # Grupo 7: Polling/Animações
-        printf " %b [26] 📡 Polling Rate 1000Hz\n" "$(icon check_prop persist.vendor.hid.polling_rate 1000)"
+        # Grupo 7: Polling/CPU
+        printf " %b [28] 📡 Polling Rate 1000Hz\n" "$(icon check_prop persist.vendor.hid.polling_rate 1000)"
+        printf " %b [29] 🧠 Responsividade CPU\n" "$(icon check_prop sem_enhanced_cpu_responsiveness 1)"
         echo ""
 
-        # Grupo 8: Debug/Animações
-        printf " %b [27] 🐞 Debug input low latency\n" "$(icon check_prop debug.input.low_latency 1)"
-        printf " %b [28] 🧪 Debug input no buffer\n" "$(icon check_prop debug.input.no_buffer 1)"
-        printf " %b [29] 📊 Animações desativadas\n" "$(icon check_setting global window_animation_scale 0)"
-        printf " %b [30] 🎭 Transições desativadas\n" "$(icon check_setting global transition_animation_scale 0)"
-        printf " %b [31] ⏱ Animador desativado\n" "$(icon check_setting global animator_duration_scale 0)"
+        # Grupo 8: Debug/Performance
+        printf " %b [30] 🐞 Debug input low latency\n" "$(icon check_prop debug.input.low_latency 1)"
+        printf " %b [31] 🧪 Debug input no buffer\n" "$(icon check_prop debug.input.no_buffer 1)"
+        printf " %b [32] 🖼 SF latch unsignaled\n" "$(icon check_prop debug.sf.latch_unsignaled 1)"
+        printf " %b [33] 📊 Estabilidade de frames\n" "$(icon check_prop persist.game.frame_stability 1)"
+        printf " %b [34] 🚀 CPU boost persistente\n" "$(icon check_prop persist.sys.cpu.boost 1)"
         
         echo -e "\n${BOLD}${CYAN}────────────────────────────────────${RESET}"
         
+        # Opções especiais
+        if spoof_status; then
+            SPOOF_ICON="${GREEN}🟢${RESET}"
+        else
+            SPOOF_ICON="${RED}🔴${RESET}"
+        fi
+        printf " %b [43] 🎯 Spoof 120 FPS\n" "$SPOOF_ICON"
         printf " ${RED}🔴${RESET} [44] ♻️  Reset total\n"
         
         echo -e "\n${BOLD}${CYAN}[0] ⬅️ Voltar${RESET}"
@@ -1404,13 +1533,17 @@ menu_todos_tweaks() {
             22) toggle_tweak "Prioridade de vídeo externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
             23) toggle_tweak "Gamepad: baixa latência" "$submenu_28_cmd_on" "$submenu_28_cmd_off" ;;
             24) toggle_tweak "Fastpath HID (rota direta)" "$submenu_31_cmd_on" "$submenu_31_cmd_off" ;;
-            25) toggle_tweak "Despacho rápido de input" "$submenu_38_cmd_on" "$submenu_38_cmd_off" ;;
-            26) toggle_tweak "Polling Rate HID (1000Hz)" "$submenu_51_cmd_on" "$submenu_51_cmd_off" ;;
-            27) toggle_tweak "Debug Input Low Latency" "$submenu_57_cmd_on" "$submenu_57_cmd_off" ;;
-            28) toggle_tweak "Debug Input No Buffer" "$submenu_58_cmd_on" "$submenu_58_cmd_off" ;;
-            29) toggle_tweak "Animações desativadas" "$submenu_66_cmd_on" "$submenu_66_cmd_off" ;;
-            30) toggle_tweak "Transições desativadas" "$submenu_67_cmd_on" "$submenu_67_cmd_off" ;;
-            31) toggle_tweak "Animador desativado" "$submenu_68_cmd_on" "$submenu_68_cmd_off" ;;
+            25) toggle_tweak "Modo desempenho USB" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
+            26) toggle_tweak "Interrupções USB baixa latência" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
+            27) toggle_tweak "Despacho rápido de input" "$submenu_38_cmd_on" "$submenu_38_cmd_off" ;;
+            28) toggle_tweak "Polling Rate HID (1000Hz)" "$submenu_51_cmd_on" "$submenu_51_cmd_off" ;;
+            29) toggle_tweak "CPU Responsividade Aprimorada" "$submenu_56_cmd_on" "$submenu_56_cmd_off" ;;
+            30) toggle_tweak "Debug Input Low Latency" "$submenu_57_cmd_on" "$submenu_57_cmd_off" ;;
+            31) toggle_tweak "Debug Input No Buffer" "$submenu_58_cmd_on" "$submenu_58_cmd_off" ;;
+            32) toggle_tweak "Debug SF Latch Unsignaled" "$submenu_63_cmd_on" "$submenu_63_cmd_off" ;;
+            33) toggle_tweak "Persist Game Frame Stability" "$submenu_64_cmd_on" "$submenu_64_cmd_off" ;;
+            34) toggle_tweak "Persist Sys CPU Boost" "$submenu_65_cmd_on" "$submenu_65_cmd_off" ;;
+            43) submenu_spoof ;;
             44) submenu_reset ;;
             0) return ;;
             *) echo -e "${RED}Opção inválida...${RESET}"; sleep 1 ;;
@@ -1610,13 +1743,14 @@ menu() {
         echo "[03] ⚡ Turbo absoluto"
         echo "[04] 🔥 Extremo (sem limites)"
         echo ""
-        echo "[05] 🖥 Resolução / DPI"
+        echo "[05] 🎯 Spoof 120 FPS"
+        echo "[06] 🖥 Resolução / DPI"
         echo ""
-        echo "[06] 📊 Status do sistema"
-        echo "[07] ⚙️  Config. Atualização"
-        echo "[08] 🧹 Limpar cache"
-        echo "[09] 🔄 Reiniciar dispositivo"
-        echo "[10] ♻️  Reset geral"
+        echo "[07] 📊 Status do sistema"
+        echo "[08] ⚙️  Config. Atualização"
+        echo "[09] 🧹 Limpar cache"
+        echo "[10] 🔄 Reiniciar dispositivo"
+        echo "[11] ♻️  Reset geral"
         echo ""
         echo "[00] ❌ Sair"
         echo ""
@@ -1642,21 +1776,24 @@ menu() {
                 press_enter
                 ;;
             05) 
-                config_resolucao_dpi
+                submenu_spoof
                 ;;
             06) 
-                show_performance_status
+                config_resolucao_dpi
                 ;;
             07) 
-                menu_config_update
+                show_performance_status
                 ;;
             08) 
-                limpar_cache_simples
+                menu_config_update
                 ;;
             09) 
-                reiniciar_dispositivo
+                limpar_cache_simples
                 ;;
             10) 
+                reiniciar_dispositivo
+                ;;
+            11) 
                 submenu_reset
                 ;;
             00) 
