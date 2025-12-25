@@ -1362,81 +1362,8 @@ if [ "$1" = "--ativar-todos" ]; then
 fi
 
 if [ "$1" = "--boot" ]; then
-    # 🔴 CORREÇÃO: Se a licença for inválida, restaurar tudo automaticamente
     if ! verificar_integridade_licenca; then
-        log_seguranca "BOOT_LICENSE_INVALIDA: Licença inválida no boot, restaurando configurações"
-        echo -e "${RED}⚠️  Licença inválida/expirada. Restaurando configurações padrão...${RESET}"
-        
-        # RESTAURAR VALORES PADRÃO
-        settings put global restricted_device_performance '1,1'
-        settings put secure tap_duration_threshold 100
-        settings put secure long_press_timeout 500
-        settings put secure multi_press_timeout 300
-        settings put secure accessibility_auto_action_delay 200
-        settings put global block_untrusted_touches 1
-        settings delete system peak_refresh_rate
-        settings delete system min_refresh_rate
-        settings delete global display_dual_output
-        settings delete global gamepad.latency_reduction
-
-        setprop vendor.usb.raw_input.enable 1
-        setprop persist.usb.low_latency_mode 0
-        setprop vendor.usb.hid.priority 1
-        setprop persist.vendor.usb.high_speed 0
-        setprop persist.vendor.usb.power 0
-        setprop vendor.usb.hub.boost 0
-        setprop vendor.usb.mouse.jitter_filter 1
-
-        setprop persist.sys.mouse.linear_response 0
-        setprop persist.sys.pointer.acceleration 1
-
-        setprop persist.sys.input.low_latency_mode 0
-        setprop persist.sys.input.high_update_rate false
-
-        setprop debug.hwui.disable_vsync 1
-        setprop persist.sys.gpu.low_latency 0
-        setprop persist.sys.gpu.frame_boost 0
-
-        setprop vendor.display.external_priority 0
-        setprop persist.video.duplicate.display 0
-
-        setprop vendor.hid.input.fastpath 0
-        setprop persist.sys.input.filter 1
-        setprop persist.sys.input.resample 1
-        setprop persist.vendor.usb.low_latency_interrupts 1
-        setprop persist.sys.input.dispatch_fast 1
-        
-        setprop debug.input.low_latency 1
-        
-        setprop windowsmgr.max_events_per_sec 90
-        
-        setprop debug.sf.late.sf.duration 0
-        setprop debug.sf.early.sf.duration 0
-        setprop debug.sf.frame_rate_multiple_threshold 60
-        setprop debug.sf.high_fps_late.app.duration 0
-        setprop debug.sf.high_fps_late.sf.duration 0
-        
-        setprop debug.hwui.skip_vsync 0
-        setprop persist.sys.input.urgent 0
-        
-        setprop debug.sf.latch_unsignaled 0
-        setprop persist.sys.cpu.boost 0
-        
-        settings put global window_animation_scale 1
-        settings put global transition_animation_scale 1
-        settings put global animator_duration_scale 1
-
-        # Novas propriedades
-        setprop persist.sys.input.priority 0
-        setprop persist.video.low_latency_path 0
-
-        # Limpar arquivos de controle
-        rm -rf "$FLAG_DIR" 2>/dev/null
-        rm -f "$SPOOF_FILE" "$SPOOF_FLAG" "$ORIG_STORE" 2>/dev/null
-        rm -f "$MODDIR/enable_on_boot"
-        rm -f "$ENABLED_TWEAKS_FILE"
-        
-        log_seguranca "BOOT_RESET_COMPLETO: Sistema restaurado ao padrão SEM ACESSO AO PAINEL"
+        log_seguranca "BOOT_BLOQUEADO: Licença inválida no boot"
         exit 1
     fi
     
@@ -1865,18 +1792,9 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] INICIO: Script iniciado" > "$SECURITY_LOG"
 
 verificacao_inicial
 
-# 🔴 CORREÇÃO CRÍTICA: Se a licença for inválida, restaurar tudo automaticamente
-if ! verificar_integridade_licenca; then
-    log_seguranca "LICENÇA_INVALIDA_INICIO: Licença inválida, restaurando configurações SEM ACESSO AO PAINEL"
-    echo -e "${RED}⚠️  Licença inválida/expirada. Restaurando configurações padrão...${RESET}"
-    
-    # Executar o reset automático SEM PERMITIR ACESSO AO PAINEL
-    reset_total_auto
-    # A função reset_total_auto já chama exit 1, então o script termina aqui
-fi
-
-# ✅ Apenas se a licença for válida, verificar a sessão.
-if [ -f "$SESSION_FILE" ]; then
+# ✅ CORREÇÃO: Sempre exigir verificação completa da licença
+# A sessão só é válida se a licença estiver válida
+if [ -f "$SESSION_FILE" ] && verificar_integridade_licenca; then
     # Verificar tempo da sessão
     SESSION_TIME=$(stat -c %Y "$SESSION_FILE" 2>/dev/null || echo "0")
     NOW=$(date +%s)
