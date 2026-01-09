@@ -1,69 +1,72 @@
 #!/system/bin/sh
 
 ###############################################################################
-# ⚡ ATUALIZAÇÃO AUTOMÁTICA - VERSÃO AUTOMÁTICA
+# ⚡ AUTO UPDATE - VERSÃO AUTOMÁTICA
 ###############################################################################
 MODDIR=${0%/*}
-ARQUIVO_IDENTIFICACAO="$MODDIR/impressao_digital"
-URL_PAINEL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh"
-URL_HASH="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/hash.txt"
+FINGERPRINT_FILE="$MODDIR/device_fingerprint"
+PAINEL_URL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/painel-latencia.sh"
+HASH_URL="https://raw.githubusercontent.com/FeraAlpha/painel-latencia-servidor/main/hash.txt"
 SELF="$0"
-HASH_LOCAL="/data/local/tmp/painel_hash"
-TMP_DOWNLOAD="/data/local/tmp/painel_novo.sh"
+LOCAL_HASH="/data/local/tmp/painel_hash"
+TMP_DL="/data/local/tmp/painel_new.sh"
 
 # Configuração de auto-update
-ARQUIVO_AUTO_UPDATE="$MODDIR/auto_update_ativado"
-[ ! -f "$ARQUIVO_AUTO_UPDATE" ] && echo "1" > "$ARQUIVO_AUTO_UPDATE"
+AUTO_UPDATE_FILE="$MODDIR/auto_update_enabled"
+[ ! -f "$AUTO_UPDATE_FILE" ] && echo "1" > "$AUTO_UPDATE_FILE"
 
 ###############################################################################
 # 🔐 SISTEMA DE LICENÇA FORTIFICADO
 ###############################################################################
 
-SERVIDOR="https://painel-licenca-server.onrender.com"
-ARQUIVO_LICENCA="$MODDIR/info_licenca"
-ARQUIVO_ASSINATURA="$MODDIR/assinatura_licenca"
-SCRIPT_RESET="$MODDIR/reset_auto.sh"
-ARQUIVO_SESSAO="$MODDIR/token_sessao"
+SERVER="https://painel-licenca-server.onrender.com"
+LICENSE_FILE="$MODDIR/license_info"
+LICENSE_SIGNATURE_FILE="$MODDIR/license_signature"
+RESET_SCRIPT="$MODDIR/reset_auto.sh"
+SESSION_FILE="$MODDIR/session_token"
 CHAVE_SECRETA="FER4_4LPH4_2024_S3CR3T_K3Y_N0T_SH4R3D"
 
 # Log de segurança
-LOG_SEGURANCA="/data/local/tmp/fera_seguranca.log"
+SECURITY_LOG="/data/local/tmp/fera_security.log"
 log_seguranca() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_SEGURANCA"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$SECURITY_LOG"
 }
 
-gera_impressao_digital() {
-    ID_ANDROID=$(settings get secure android_id 2>/dev/null || echo "")
+gera_fingerprint() {
+    # Gerar fingerprint com dados HARDWARE QUE NÃO MUDAM COM SPOOF
+    # Usar apenas identificadores de hardware imutáveis
+    ANDROID_ID=$(settings get secure android_id 2>/dev/null || echo "")
     SERIAL=$(getprop ro.serialno 2>/dev/null || echo "")
     HARDWARE=$(getprop ro.boot.hardware 2>/dev/null || echo "")
-    SERIAL_BOOT=$(getprop ro.boot.serialno 2>/dev/null || echo "")
-    PLATAFORMA=$(getprop ro.hardware.chipname 2>/dev/null || getprop ro.board.platform 2>/dev/null || echo "")
+    BOOT_SERIAL=$(getprop ro.boot.serialno 2>/dev/null || echo "")
+    PLATFORM=$(getprop ro.hardware.chipname 2>/dev/null || getprop ro.board.platform 2>/dev/null || echo "")
     
-    DADOS_CRUS="${ID_ANDROID}-${SERIAL}-${HARDWARE}-${SERIAL_BOOT}-${PLATAFORMA}"
+    # Combinação segura e imutável
+    FP_RAW="${ANDROID_ID}-${SERIAL}-${HARDWARE}-${BOOT_SERIAL}-${PLATFORM}"
     
     if command -v sha256sum >/dev/null 2>&1; then
-        FP=$(echo -n "$DADOS_CRUS" | sha256sum | awk '{print $1}')
+        FP=$(echo -n "$FP_RAW" | sha256sum | awk '{print $1}')
     elif command -v md5sum >/dev/null 2>&1; then
-        FP=$(echo -n "$DADOS_CRUS" | md5sum | awk '{print $1}')
+        FP=$(echo -n "$FP_RAW" | md5sum | awk '{print $1}')
     elif command -v md5 >/dev/null 2>&1; then
-        FP=$(echo -n "$DADOS_CRUS" | md5 | awk '{print $1}')
+        FP=$(echo -n "$FP_RAW" | md5 | awk '{print $1}')
     else
-        FP=$(echo -n "$DADOS_CRUS" | tr -d ' ' | tr -d '\n')
+        FP=$(echo -n "$FP_RAW" | tr -d ' ' | tr -d '\n')
     fi
     
     echo "$FP"
 }
 
 gerar_assinatura() {
-    DADOS="$1"
-    echo -n "$DADOS" | sha256sum | awk '{print $1}'
+    DATA="$1"
+    echo -n "$DATA" | sha256sum | awk '{print $1}'
 }
 
 verificar_assinatura() {
-    DADOS="$1"
+    DATA="$1"
     ASSINATURA="$2"
     
-    CALCULADA=$(gerar_assinatura "$DADOS")
+    CALCULADA=$(gerar_assinatura "$DATA")
     
     if [ "$ASSINATURA" = "$CALCULADA" ]; then
         return 0
@@ -77,9 +80,9 @@ reset_total_auto() {
     echo "⚠ RESET AUTOMÁTICO — LICENÇA EXPIRADA/INVÁLIDA" > /dev/kmsg
     log_seguranca "RESET_AUTO: Licença expirada ou inválida, resetando sistema"
 
-    echo -e "${VERMELHO}⚠️  Licença expirada. Restaurando configurações padrão...${RESET}"
+    echo -e "${RED}⚠️  Licença expirada. Restaurando configurações padrão...${RESET}"
     
-    # RESTAURAR VALORES PADRÃO
+    # RESTAURAR VALORES PADRÃO (NÃO REMOVER)
     settings put global restricted_device_performance '1,1'
     settings put secure tap_duration_threshold 100
     settings put secure long_press_timeout 500
@@ -89,12 +92,14 @@ reset_total_auto() {
     settings delete system peak_refresh_rate
     settings delete system min_refresh_rate
     settings delete global display_dual_output
+    # REMOVIDO: settings delete global gamepad.latencia_reduction
 
     setprop vendor.usb.raw_input.enable 1
     setprop persist.usb.low_latency_mode 0
     setprop vendor.usb.hid.priority 1
     setprop persist.vendor.usb.high_speed 0
     setprop persist.vendor.usb.power 0
+    # REMOVIDO: setprop vendor.usb.hub.boost 0
     setprop vendor.usb.mouse.jitter_filter 1
 
     setprop persist.sys.mouse.linear_response 0
@@ -103,10 +108,12 @@ reset_total_auto() {
     setprop persist.sys.input.low_latency_mode 0
     setprop persist.sys.input.high_update_rate false
 
+    setprop debug.hwui.disable_vsync 1
     setprop persist.sys.gpu.low_latency 0
     setprop persist.sys.gpu.frame_boost 0
 
     setprop vendor.display.external_priority 0
+    # REMOVIDO: setprop persist.video.duplicate.display 0
 
     setprop vendor.hid.input.fastpath 0
     setprop persist.sys.input.filter 1
@@ -116,6 +123,7 @@ reset_total_auto() {
     
     setprop debug.input.low_latency 1
     
+    # ALTERADO: windowsmgr.max_events_per_sec 120
     setprop windowsmgr.max_events_per_sec 120
     
     setprop debug.sf.late.sf.duration 0
@@ -125,56 +133,64 @@ reset_total_auto() {
     setprop debug.sf.high_fps_late.sf.duration 0
     
     setprop debug.hwui.skip_vsync 0
-    setprop debug.hwui.render_dirty_regions true
     setprop persist.sys.input.urgent 0
     
     setprop debug.sf.latch_unsignaled 0
     setprop persist.sys.cpu.boost 0
-    setprop persist.video.low_latency_path 0
     
     settings put global window_animation_scale 1
     settings put global transition_animation_scale 1
     settings put global animator_duration_scale 1
 
+    # Novas propriedades
     setprop persist.sys.input.priority 0
+    setprop persist.video.low_latency_path 0
+
+    # Novas propriedades adicionadas (remover ao resetar)
+    setprop debug.sf.disable_backpressure 0
+    setprop debug.sf.latch_unsignaled 0
+    setprop persist.sys.display.primary_external 0
     setprop persist.sys.input.absolute_mode 0
     setprop persist.sys.input.relative_mode 1
+    settings delete global enhanced_processing
 
-    # Limpar arquivos de controle
-    rm -rf "$MODDIR/bandeiras_desativadas"
-    rm -f "$MODDIR/system.prop" "$MODDIR/spoof_ativado"
-    rm -f "$MODDIR/props_originais"
-    rm -f "$MODDIR/info_licenca"
-    rm -f "$MODDIR/assinatura_licenca"
-    rm -f "$MODDIR/token_sessao"
-    rm -f "$MODDIR/ativar_no_boot"
-    rm -f "$ARQUIVO_TWEAKS_ATIVOS"
+    # Limpar apenas os arquivos de controle, NÃO reiniciar
+    rm -rf "$MODDIR/disabled_flags"
+    rm -f "$MODDIR/system.prop" "$MODDIR/spoof_enabled"
+    rm -f "$MODDIR/original.props"
+    rm -f "$MODDIR/license_info"
+    rm -f "$MODDIR/license_signature"
+    rm -f "$MODDIR/session_token"
+    rm -f "$MODDIR/enable_on_boot"
+    rm -f "$ENABLED_TWEAKS_FILE"
     
     setprop persist.fera.touch.disabled 0
-    rm -f "$MODDIR/lista_touch_desativado"
+    rm -f "$MODDIR/touch_disabled_list"
     
-    log_seguranca "RESET_COMPLETO: Sistema restaurado ao padrão"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] RESET_COMPLETO: Sistema restaurado ao padrão SEM REINÍCIO" > /data/local/tmp/fera_security.log
     
-    echo -e "${AMARELO}✅ Configurações restauradas ao padrão.${RESET}"
+    # NÃO REINICIAR - apenas mostrar mensagem e sair
+    echo -e "${YELLOW}✅ Configurações restauradas ao padrão.${RESET}"
+    echo -e "${CYAN}O sistema NÃO será reiniciado.${RESET}"
     exit 1
 }
 
 verificar_integridade_licenca() {
-    if [ ! -f "$ARQUIVO_LICENCA" ]; then
+    if [ ! -f "$LICENSE_FILE" ]; then
         log_seguranca "ERRO: Arquivo de licença não existe"
-        echo -e "${VERMELHO}❌ ERRO: Licença não encontrada${RESET}"
+        echo -e "${RED}❌ ERRO: Licença não encontrada${RESET}"
         return 1
     fi
     
-    if [ ! -f "$ARQUIVO_ASSINATURA" ]; then
+    if [ ! -f "$LICENSE_SIGNATURE_FILE" ]; then
         log_seguranca "ERRO: Assinatura da licença não existe"
-        echo -e "${VERMELHO}❌ ERRO: Assinatura de licença não encontrada${RESET}"
+        echo -e "${RED}❌ ERRO: Assinatura de licença não encontrada${RESET}"
         return 1
     fi
     
-    EXP=$(cat "$ARQUIVO_LICENCA" 2>/dev/null)
-    ASSINATURA=$(cat "$ARQUIVO_ASSINATURA" 2>/dev/null)
-    FP=$(gera_impressao_digital)
+    EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
+    ASSINATURA=$(cat "$LICENSE_SIGNATURE_FILE" 2>/dev/null)
+    FP=$(gera_fingerprint)
     
     if [ -z "$EXP" ] || [ -z "$ASSINATURA" ]; then
         log_seguranca "ERRO: Licença ou assinatura vazia"
@@ -183,21 +199,27 @@ verificar_integridade_licenca() {
     
     if ! echo "$EXP" | grep -qE '^[0-9]{10,}$'; then
         log_seguranca "ERRO: Formato de licença inválido: $EXP"
-        echo -e "${VERMELHO}❌ ERRO: Formato de licença inválido${RESET}"
+        echo -e "${RED}❌ ERRO: Formato de licença inválido${RESET}"
+        return 1
+    fi
+    
+    if [ "$EXP" -lt 1577836800 ] || [ "$EXP" -gt 1893456000 ]; then
+        log_seguranca "ERRO: Timestamp fora do intervalo: $EXP"
+        echo -e "${RED}❌ ERRO: Data de licença inválida${RESET}"
         return 1
     fi
     
     DADOS_ASSINAR="${EXP}:${FP}"
     if ! verificar_assinatura "$DADOS_ASSINAR" "$ASSINATURA"; then
         log_seguranca "ERRO: Assinatura inválida para licença"
-        echo -e "${VERMELHO}❌ ERRO: Licença corrompida ou modificada${RESET}"
+        echo -e "${RED}❌ ERRO: Licença corrompida ou modificada${RESET}"
         return 1
     fi
     
-    AGORA=$(date +%s)
-    if [ "$AGORA" -ge "$EXP" ]; then
-        log_seguranca "AVISO: Licença expirada em $EXP, agora é $AGORA"
-        echo -e "${VERMELHO}⚠️  Licença expirada${RESET}"
+    NOW=$(date +%s)
+    if [ "$NOW" -ge "$EXP" ]; then
+        log_seguranca "AVISO: Licença expirada em $EXP, agora é $NOW"
+        echo -e "${RED}⚠️  Licença expirada${RESET}"
         return 1
     fi
     
@@ -214,13 +236,13 @@ verifica_expiracao() {
 }
 
 verificar_licenca_online() {
-    FP=$(gera_impressao_digital)
-    EXP=$(cat "$ARQUIVO_LICENCA" 2>/dev/null)
+    FP=$(gera_fingerprint)
+    EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
     
-    if curl --connect-timeout 10 -s -f "$SERVIDOR/ping" >/dev/null 2>&1; then
+    if curl --connect-timeout 10 -s -f "$SERVER/ping" >/dev/null 2>&1; then
         RESP=$(curl -s -X POST -H "Content-Type: application/json" \
                -d "{\"fingerprint\":\"$FP\",\"expires\":\"$EXP\"}" \
-               "$SERVIDOR/verify_license")
+               "$SERVER/verify_license")
         
         if echo "$RESP" | grep -q '"valid":false'; then
             log_seguranca "SERVIDOR_REJEITOU: Licença inválida no servidor"
@@ -229,46 +251,46 @@ verificar_licenca_online() {
     fi
 }
 
-verificar_aviso_licenca() {
-    if [ ! -f "$ARQUIVO_LICENCA" ]; then
+check_license_warning() {
+    if [ ! -f "$LICENSE_FILE" ]; then
         return 0
     fi
     
-    EXP=$(cat "$ARQUIVO_LICENCA")
-    AGORA=$(date +%s)
+    EXP=$(cat "$LICENSE_FILE")
+    NOW=$(date +%s)
     
     if echo "$EXP" | grep -qE '^[0-9]+$'; then
-        DIFERENCA=$((EXP - AGORA))
-        HORAS=$((DIFERENCA / 3600))
+        DIFF=$((EXP - NOW))
+        HOURS=$((DIFF / 3600))
         
-        if [ "$DIFERENCA" -gt 0 ] && [ "$HORAS" -lt 24 ]; then
-            echo -e "\n${VERMELHO}⚠️  AVISO: SUA LICENÇA IRÁ EXPIRAR EM ${HORAS} HORA(S)!${RESET}"
-            echo -e "${AMARELO}Renove seu acesso para evitar perda das configurações.${RESET}\n"
+        if [ "$DIFF" -gt 0 ] && [ "$HOURS" -lt 24 ]; then
+            echo -e "\n${RED}⚠️  AVISO: SUA LICENÇA IRÁ EXPIRAR EM ${HOURS} HORA(S)!${RESET}"
+            echo -e "${YELLOW}Renove seu acesso para evitar perda das configurações.${RESET}\n"
             sleep 3
         fi
     fi
 }
 
 ativar_servidor() {
-    USUARIO="$1"
-    SENHA="$2"
-    FP=$(gera_impressao_digital)
+    USER="$1"
+    PASS="$2"
+    FP=$(gera_fingerprint)
     
-    log_seguranca "TENTATIVA_LOGIN: Usuário=$USUARIO, Impressão digital=$FP"
+    log_seguranca "TENTATIVA_LOGIN: Usuário=$USER, Fingerprint=$FP"
 
-    JSON="{\"username\":\"$USUARIO\",\"password\":\"$SENHA\",\"fingerprint\":\"$FP\"}"
+    JSON="{\"username\":\"$USER\",\"password\":\"$PASS\",\"fingerprint\":\"$FP\"}"
 
-    RESP=$(curl -s -X POST -H "Content-Type: application/json" -d "$JSON" "$SERVIDOR/activate")
+    RESP=$(curl -s -X POST -H "Content-Type: application/json" -d "$JSON" "$SERVER/activate")
 
     if echo "$RESP" | grep -q '"status":"error"' || echo "$RESP" | grep -q '"error"'; then
-        MOTIVO=$(echo "$RESP" | sed -n 's/.*"reason":"\([^"]*\)".*/\1/p')
-        log_seguranca "LOGIN_FALHOU: $MOTIVO"
-        echo -e "\033[1;31m❌ Erro: ${MOTIVO:-Credenciais inválidas}\033[0m"
+        REASON=$(echo "$RESP" | sed -n 's/.*"reason":"\([^"]*\)".*/\1/p')
+        log_seguranca "LOGIN_FALHOU: $REASON"
+        echo -e "\033[1;31m❌ Erro: ${REASON:-Credenciais inválidas}\033[0m"
         return 1
     fi
 
     echo -e "\033[1;32m✔ Login aprovado!\033[0m"
-    log_seguranca "LOGIN_SUCESSO: Usuário=$USUARIO"
+    log_seguranca "LOGIN_SUCESSO: Usuário=$USER"
 
     EXP=$(echo "$RESP" | sed -n 's/.*"expires_at":\([0-9]*\).*/\1/p')
     if [ -z "$EXP" ]; then
@@ -277,15 +299,15 @@ ativar_servidor() {
         return 1
     fi
 
-    FP=$(gera_impressao_digital)
+    FP=$(gera_fingerprint)
     DADOS_ASSINAR="${EXP}:${FP}"
     ASSINATURA=$(gerar_assinatura "$DADOS_ASSINAR")
     
-    echo "$EXP" > "$ARQUIVO_LICENCA"
-    echo "$ASSINATURA" > "$ARQUIVO_ASSINATURA"
+    echo "$EXP" > "$LICENSE_FILE"
+    echo "$ASSINATURA" > "$LICENSE_SIGNATURE_FILE"
     
-    TOKEN_SESSAO=$(echo -n "${EXP}:${FP}:$(date +%s)" | sha256sum | awk '{print $1}')
-    echo "$TOKEN_SESSAO" > "$ARQUIVO_SESSAO"
+    SESSION_TOKEN=$(echo -n "${EXP}:${FP}:$(date +%s)" | sha256sum | awk '{print $1}')
+    echo "$SESSION_TOKEN" > "$SESSION_FILE"
     
     log_seguranca "LICENÇA_ATIVADA: Expira=$EXP, Assinatura=$ASSINATURA"
 
@@ -293,23 +315,24 @@ ativar_servidor() {
 }
 
 verificar_sessao() {
-    if [ ! -f "$ARQUIVO_SESSAO" ]; then
+    if [ ! -f "$SESSION_FILE" ]; then
         return 1
     fi
     
+    # 🔴 CORREÇÃO CRÍTICA: Verificar licença primeiro!
     if ! verificar_integridade_licenca; then
-        rm -f "$ARQUIVO_SESSAO"
+        rm -f "$SESSION_FILE"
         log_seguranca "SESSAO_INVALIDA: Licença inválida para sessão"
         return 1
     fi
     
-    TOKEN_SESSAO=$(cat "$ARQUIVO_SESSAO")
-    TEMPO_SESSAO=$(stat -c %Y "$ARQUIVO_SESSAO" 2>/dev/null || echo "0")
-    AGORA=$(date +%s)
+    SESSION_TOKEN=$(cat "$SESSION_FILE")
+    SESSION_TIME=$(stat -c %Y "$SESSION_FILE" 2>/dev/null || echo "0")
+    NOW=$(date +%s)
     
-    if [ $((AGORA - TEMPO_SESSAO)) -gt 86400 ]; then
-        rm -f "$ARQUIVO_SESSAO"
-        log_seguranca "SESSAO_EXPIROU: Tempo decorrido $((AGORA - TEMPO_SESSAO))s"
+    if [ $((NOW - SESSION_TIME)) -gt 86400 ]; then
+        rm -f "$SESSION_FILE"
+        log_seguranca "SESSAO_EXPIROU: Tempo decorrido $((NOW - SESSION_TIME))s"
         return 1
     fi
     
@@ -321,7 +344,7 @@ verificar_sessao() {
 ###############################################################################
 
 salvar_props_originais() {
-    if [ ! -f "$ARMAZENAMENTO_ORIGINAL" ]; then
+    if [ ! -f "$ORIG_STORE" ]; then
         {
             echo "ro.product.model=$(getprop ro.product.model 2>/dev/null || echo "")"
             echo "ro.product.brand=$(getprop ro.product.brand 2>/dev/null || echo "")"
@@ -330,8 +353,8 @@ salvar_props_originais() {
             echo "ro.product.manufacturer=$(getprop ro.product.manufacturer 2>/dev/null || echo "")"
             echo "ro.build.id=$(getprop ro.build.id 2>/dev/null || echo "")"
             echo "ro.build.fingerprint=$(getprop ro.build.fingerprint 2>/dev/null || echo "")"
-        } > "$ARMAZENAMENTO_ORIGINAL"
-        chmod 644 "$ARMAZENAMENTO_ORIGINAL" 2>/dev/null
+        } > "$ORIG_STORE"
+        chmod 644 "$ORIG_STORE" 2>/dev/null
     fi
 }
 
@@ -345,13 +368,13 @@ verificacao_inicial() {
     
     log_seguranca "INICIALIZACAO: Script iniciado, verificando integridade"
     
-    HASH_SCRIPT=$(sha256sum "$0" 2>/dev/null | awk '{print $1}' || echo "")
-    if [ -n "$HASH_SCRIPT" ]; then
-        log_seguranca "SCRIPT_HASH: $HASH_SCRIPT"
+    SCRIPT_HASH=$(sha256sum "$0" 2>/dev/null | awk '{print $1}' || echo "")
+    if [ -n "$SCRIPT_HASH" ]; then
+        log_seguranca "SCRIPT_HASH: $SCRIPT_HASH"
     fi
     
     echo "🔍 Verificando configurações de spoof..."
-    if [ -f "$BANDEIRA_SPOOF" ] || ( [ -f "$ARQUIVO_SPOOF" ] && grep -q "ro.product.model=RMX5101" "$ARQUIVO_SPOOF" 2>/dev/null ); then
+    if [ -f "$SPOOF_FLAG" ] || ( [ -f "$SPOOF_FILE" ] && grep -q "ro.product.model=RMX5101" "$SPOOF_FILE" 2>/dev/null ); then
         echo -e "\033[1;33m📱 Spoof Realme 15 Pro detectado.\033[0m"
         echo -e "\033[1;36mℹ️  Você pode gerenciar o spoof após o login.\033[0m"
         echo ""
@@ -371,12 +394,12 @@ menu_config_update() {
     while true; do
         clear
         printf '\033c'
-        echo -e "${NEGRITO}${CIANO}=== CONFIGURAÇÕES DE ATUALIZAÇÃO ===${RESET}\n"
+        echo -e "${BOLD}${CYAN}=== CONFIGURAÇÕES DE ATUALIZAÇÃO ===${RESET}\n"
         
-        if [ -f "$ARQUIVO_AUTO_UPDATE" ] && [ "$(cat "$ARQUIVO_AUTO_UPDATE")" = "1" ]; then
-            echo -e "Status: ${VERDE}✅ ATUALIZAÇÃO AUTOMÁTICA ATIVADA${RESET}\n"
+        if [ -f "$AUTO_UPDATE_FILE" ] && [ "$(cat "$AUTO_UPDATE_FILE")" = "1" ]; then
+            echo -e "Status: ${GREEN}✅ ATUALIZAÇÃO AUTOMÁTICA ATIVADA${RESET}\n"
         else
-            echo -e "Status: ${VERMELHO}❌ ATUALIZAÇÃO AUTOMÁTICA DESATIVADA${RESET}\n"
+            echo -e "Status: ${RED}❌ ATUALIZAÇÃO AUTOMÁTICA DESATIVADA${RESET}\n"
         fi
         
         echo "1) Ativar atualização automática"
@@ -384,24 +407,24 @@ menu_config_update() {
         echo "0) Voltar"
         echo ""
         
-        ler_prompt "> " opcao_update
+        read_prompt "> " opcao_update
         
         case "$opcao_update" in
             1)
-                echo "1" > "$ARQUIVO_AUTO_UPDATE"
-                echo -e "${VERDE}✅ Atualização automática ativada!${RESET}"
+                echo "1" > "$AUTO_UPDATE_FILE"
+                echo -e "${GREEN}✅ Atualização automática ativada!${RESET}"
                 sleep 1
                 ;;
             2)
-                echo "0" > "$ARQUIVO_AUTO_UPDATE"
-                echo -e "${AMARELO}⚠️  Atualização automática desativada${RESET}"
+                echo "0" > "$AUTO_UPDATE_FILE"
+                echo -e "${YELLOW}⚠️  Atualização automática desativada${RESET}"
                 sleep 1
                 ;;
             0)
                 return
                 ;;
             *)
-                echo -e "${VERMELHO}Opção inválida!${RESET}"
+                echo -e "${RED}Opção inválida!${RESET}"
                 sleep 1
                 ;;
         esac
@@ -414,21 +437,21 @@ menu_config_update() {
 
 limpar_cache_simples() {
     clear
-    echo -e "${NEGRITO}${CIANO}=== LIMPEZA DE CACHE ===${RESET}\n"
+    echo -e "${BOLD}${CYAN}=== LIMPEZA DE CACHE ===${RESET}\n"
     
-    echo -e "${CIANO}Limpando cache do sistema...${RESET}"
+    echo -e "${CYAN}Limpando cache do sistema...${RESET}"
     pm trim-caches 1000G
     
-    echo -e "${CIANO}Limpando cache do usuário...${RESET}"
+    echo -e "${CYAN}Limpando cache do usuário...${RESET}"
     rm -rf /data/local/tmp/* 2>/dev/null
     rm -rf /data/dalvik-cache/* 2>/dev/null
     
-    echo -e "${VERDE}✅ Cache limpo com sucesso!${RESET}"
+    echo -e "${GREEN}✅ Cache limpo com sucesso!${RESET}"
     
     echo ""
     df -h /data | tail -1 | awk '{print "📊 Espaço livre em /data: " $4}'
     
-    pressionar_enter
+    press_enter
 }
 
 ###############################################################################
@@ -437,18 +460,18 @@ limpar_cache_simples() {
 
 reiniciar_dispositivo_simples() {
     clear
-    echo -e "${NEGRITO}${CIANO}=== REINICIAR DISPOSITIVO ===${RESET}\n"
+    echo -e "${BOLD}${CYAN}=== REINICIAR DISPOSITIVO ===${RESET}\n"
     
-    echo -e "${AMARELO}⚠️  ATENÇÃO: O dispositivo será reiniciado!${RESET}\n"
+    echo -e "${YELLOW}⚠️  ATENÇÃO: O dispositivo será reiniciado!${RESET}\n"
     
-    ler_prompt "Deseja realmente reiniciar? (s/N): " confirmar
-    if [ "$confirmar" = "s" ] || [ "$confirmar" = "S" ]; then
-        echo -e "${CIANO}Reiniciando...${RESET}"
-        echo -e "${AMARELO}O dispositivo será reiniciado em 3 segundos.${RESET}"
+    read_prompt "Deseja realmente reiniciar? (s/N): " confirm
+    if [ "$confirm" = "s" ] || [ "$confirm" = "S" ]; then
+        echo -e "${CYAN}Reiniciando...${RESET}"
+        echo -e "${YELLOW}O dispositivo será reiniciado em 3 segundos.${RESET}"
         sleep 3
         reboot
     else
-        echo -e "${AMARELO}❌ Reinício cancelado${RESET}"
+        echo -e "${YELLOW}❌ Reinício cancelado${RESET}"
         sleep 1
     fi
 }
@@ -457,20 +480,20 @@ reiniciar_dispositivo_simples() {
 # 🛠️ FUNÇÃO DE ATUALIZAÇÃO (SÓ APÓS LOGIN VÁLIDO)
 ###############################################################################
 
-verificar_atualizacao_auto() {
+auto_update_check() {
     if ! verificar_integridade_licenca; then
         log_seguranca "UPDATE_BLOQUEADO: Licença inválida para atualização"
         return 1
     fi
     
-    if [ ! -f "$ARQUIVO_AUTO_UPDATE" ] || [ "$(cat "$ARQUIVO_AUTO_UPDATE")" != "1" ]; then
+    if [ ! -f "$AUTO_UPDATE_FILE" ] || [ "$(cat "$AUTO_UPDATE_FILE")" != "1" ]; then
         return 0
     fi
     
     echo -e "\n🔍 Verificando atualizações..."
     
-    LOCAL=$(cat "$HASH_LOCAL" 2>/dev/null || echo "0")
-    REMOTO=$(curl -fsSL "${URL_HASH}?$(date +%s)" | sed 's/[^0-9a-fA-F]//g')
+    LOCAL=$(cat "$LOCAL_HASH" 2>/dev/null || echo "0")
+    REMOTO=$(curl -fsSL "${HASH_URL}?$(date +%s)" | sed 's/[^0-9a-fA-F]//g')
     
     if [ -z "$REMOTO" ] || [ "$LOCAL" = "$REMOTO" ]; then
         return 0
@@ -478,22 +501,22 @@ verificar_atualizacao_auto() {
     
     echo "🔄 Nova versão disponível! Atualizando..."
     
-    curl -fsSL "${URL_PAINEL}?$(date +%s)" -o "$TMP_DOWNLOAD"
+    curl -fsSL "${PAINEL_URL}?$(date +%s)" -o "$TMP_DL"
     
-    if [ ! -s "$TMP_DOWNLOAD" ]; then
+    if [ ! -s "$TMP_DL" ]; then
         log_seguranca "UPDATE_ERRO: Download falhou ou arquivo vazio"
         return 1
     fi
     
-    NOVO_HASH=$(sha256sum "$TMP_DOWNLOAD" | awk '{print $1}')
-    if [ "$NOVO_HASH" != "$REMOTO" ]; then
-        log_seguranca "UPDATE_ERRO: Hash não confere: $NOVO_HASH vs $REMOTO"
+    NEW_HASH=$(sha256sum "$TMP_DL" | awk '{print $1}')
+    if [ "$NEW_HASH" != "$REMOTO" ]; then
+        log_seguranca "UPDATE_ERRO: Hash não confere: $NEW_HASH vs $REMOTO"
         return 1
     fi
     
-    cp -f "$TMP_DOWNLOAD" "$SELF"
+    cp -f "$TMP_DL" "$SELF"
     chmod 755 "$SELF"
-    echo "$REMOTO" > "$HASH_LOCAL"
+    echo "$REMOTO" > "$LOCAL_HASH"
     
     log_seguranca "UPDATE_SUCESSO: Script atualizado para hash $REMOTO"
     echo -e "✅ Atualização concluída! Reiniciando painel...\n"
@@ -502,234 +525,17 @@ verificar_atualizacao_auto() {
 }
 
 ###############################################################################
-# 🎮 SISTEMA DE PRIORIDADE POR APLICATIVO (SIMPLIFICADO)
-###############################################################################
-
-ARQUIVO_APPS_PRIORITARIOS="$MODDIR/apps_prioritarios.txt"
-ARQUIVO_PRIORIDADE_ATIVA="$MODDIR/prioridade_ativa.flag"
-
-# Aplicativos prioritários padrão (GG Mouse + Free Fire)
-APPS_PRIORITARIOS_PADRAO="com.zjx.ztezscreenshot
-com.dts.freefiremax
-com.dts.freefireth"
-
-verificar_prioridade_ativa() {
-    if [ -f "$ARQUIVO_PRIORIDADE_ATIVA" ]; then
-        return 0  # Prioridade ativa
-    else
-        return 1  # Prioridade inativa
-    fi
-}
-
-aplicar_prioridade_ggmouse_ff() {
-    echo -e "${CIANO}🎮 Aplicando prioridade máxima para GG Mouse e Free Fire...${RESET}"
-    
-    # Criar arquivo de flag para indicar que está ativo
-    touch "$ARQUIVO_PRIORIDADE_ATIVA"
-    
-    # Aplicar para GG Mouse Pro
-    echo "🎮 Configurando GG Mouse Pro..."
-    setprop persist.sys.input.priority 3
-    setprop persist.sys.mouse.entrada_crua 1
-    setprop persist.sys.mouse.taxa_atualizacao 1000
-    setprop persist.sys.input.filtro 0
-    setprop persist.sys.cpu.boost.mouse 1
-    setprop persist.vendor.gpu.boost.mouse 1
-    setprop persist.usb.modo_baixa_latencia 2
-    setprop vendor.usb.hid.priority 3
-    setprop persist.sys.mouse.perfil_aceleracao 0
-    setprop persist.sys.mouse.sensibilidade 1.0
-    
-    # Aplicar para Free Fire
-    echo "🔥 Configurando Free Fire..."
-    setprop persist.sys.modo_jogo 2
-    setprop persist.vendor.perf.jogos 2
-    setprop persist.sys.priority.input 2
-    setprop persist.sys.cpu.boost.jogos 2
-    setprop persist.vendor.gpu.boost.jogos 2
-    setprop persist.vendor.touch.jogos 1
-    setprop persist.sys.touch.resposta 0
-    
-    # Configurações comuns
-    setprop debug.sf.latch_unsignaled 1
-    setprop video.accelerate.hw 1
-    setprop persist.sys.ui.hw 1
-    setprop windowsmgr.max_events_per_sec 240
-    setprop debug.egl.swapinterval 0
-    
-    # Prioridade de processo
-    setprop persist.sys.priority.foreground 90
-    setprop persist.sys.priority.jogo 95
-    setprop persist.sys.oom_score_adj -800
-    
-    # Salvar lista de apps prioritários
-    echo "$APPS_PRIORITARIOS_PADRAO" > "$ARQUIVO_APPS_PRIORITARIOS"
-    
-    echo -e "${VERDE}✅ Prioridade máxima aplicada para GG Mouse e Free Fire!${RESET}"
-    echo -e "${AMARELO}As configurações serão mantidas até você desativar.${RESET}"
-}
-
-desativar_prioridade_ggmouse_ff() {
-    echo -e "${CIANO}🔄 Desativando prioridade para GG Mouse e Free Fire...${RESET}"
-    
-    # Remover arquivo de flag
-    rm -f "$ARQUIVO_PRIORIDADE_ATIVA"
-    
-    # Restaurar configurações padrão
-    setprop persist.sys.input.priority 1
-    setprop persist.sys.mouse.entrada_crua 0
-    setprop persist.sys.mouse.taxa_atualizacao 125
-    setprop persist.sys.input.filtro 1
-    setprop persist.sys.cpu.boost.mouse 0
-    setprop persist.vendor.gpu.boost.mouse 0
-    setprop persist.usb.modo_baixa_latencia 0
-    setprop vendor.usb.hid.priority 1
-    
-    setprop persist.sys.modo_jogo 0
-    setprop persist.vendor.perf.jogos 0
-    setprop persist.sys.cpu.boost.jogos 0
-    setprop persist.vendor.gpu.boost.jogos 0
-    
-    setprop persist.sys.priority.foreground 0
-    setprop persist.sys.priority.jogo 0
-    setprop persist.sys.oom_score_adj 0
-    
-    echo -e "${VERDE}✅ Prioridade desativada.${RESET}"
-    echo -e "${AMARELO}Configurações restauradas para padrão.${RESET}"
-}
-
-###############################################################################
-# ⚡ FUNÇÃO RÁPIDA DE PRIORIDADE
-###############################################################################
-
-alternar_prioridade_ggmouse_ff() {
-    if verificar_prioridade_ativa; then
-        echo -e "${CIANO}🔍 Status: ${VERDE}✅ PRIORIDADE ATIVA${RESET}"
-        echo -e "${AMARELO}Deseja desativar a prioridade?${RESET}"
-        ler_prompt "Desativar? (s/N): " confirmar
-        
-        if [ "$confirmar" = "s" ] || [ "$confirmar" = "S" ]; then
-            desativar_prioridade_ggmouse_ff
-        else
-            echo -e "${AMARELO}✅ Mantendo prioridade ativa.${RESET}"
-        fi
-    else
-        echo -e "${CIANO}🔍 Status: ${VERMELHO}❌ PRIORIDADE INATIVA${RESET}"
-        echo -e "${AMARELO}Deseja ativar prioridade máxima para GG Mouse e Free Fire?${RESET}"
-        ler_prompt "Ativar? (s/N): " confirmar
-        
-        if [ "$confirmar" = "s" ] || [ "$confirmar" = "S" ]; then
-            aplicar_prioridade_ggmouse_ff
-        else
-            echo -e "${AMARELO}❌ Prioridade não ativada.${RESET}"
-        fi
-    fi
-}
-
-###############################################################################
-# 🎯 FUNÇÃO SIMPLES PARA APPS PRIORITÁRIOS
-###############################################################################
-
-menu_apps_prioritarios_simples() {
-    while true; do
-        clear
-        printf '\033c'
-        
-        # Verificar status atual
-        if verificar_prioridade_ativa; then
-            STATUS_PRIORIDADE="${VERDE}✅ ATIVA${RESET}"
-            OPCAO_PRINCIPAL="1) Desativar prioridade GG Mouse + FF"
-        else
-            STATUS_PRIORIDADE="${VERMELHO}❌ INATIVA${RESET}"
-            OPCAO_PRINCIPAL="1) Ativar prioridade GG Mouse + FF"
-        fi
-        
-        echo -e "${NEGRITO}${CIANO}=== APPS PRIORITÁRIOS (GG Mouse + Free Fire) ===${RESET}\n"
-        echo -e "Status: $STATUS_PRIORIDADE"
-        echo "────────────────────────────────────"
-        echo ""
-        
-        echo "$OPCAO_PRINCIPAL"
-        echo "2) Ver apps na lista"
-        echo "3) Adicionar app à lista"
-        echo "4) Remover app da lista"
-        echo "5) Restaurar lista padrão"
-        echo "0) Voltar"
-        echo ""
-        
-        ler_prompt "> " opcao
-        
-        case "$opcao" in
-            1)
-                alternar_prioridade_ggmouse_ff
-                pressionar_enter
-                ;;
-            2)
-                clear
-                echo -e "${CIANO}📋 Apps atualmente prioritários:${RESET}"
-                echo "────────────────────────────────────"
-                if [ -f "$ARQUIVO_APPS_PRIORITARIOS" ]; then
-                    cat "$ARQUIVO_APPS_PRIORITARIOS"
-                else
-                    echo "$APPS_PRIORITARIOS_PADRAO"
-                fi
-                echo "────────────────────────────────────"
-                pressionar_enter
-                ;;
-            3)
-                ler_prompt "Digite o pacote do app (ex: com.exemplo.app): " novo_app
-                if [ -n "$novo_app" ]; then
-                    if [ ! -f "$ARQUIVO_APPS_PRIORITARIOS" ]; then
-                        echo "$APPS_PRIORITARIOS_PADRAO" > "$ARQUIVO_APPS_PRIORITARIOS"
-                    fi
-                    echo "$novo_app" >> "$ARQUIVO_APPS_PRIORITARIOS"
-                    echo -e "${VERDE}✅ App adicionado à lista${RESET}"
-                fi
-                sleep 1
-                ;;
-            4)
-                if [ -f "$ARQUIVO_APPS_PRIORITARIOS" ]; then
-                    echo -e "${CIANO}📋 Apps na lista:${RESET}"
-                    cat "$ARQUIVO_APPS_PRIORITARIOS"
-                    echo ""
-                    ler_prompt "Digite o pacote do app para remover: " remover_app
-                    if [ -n "$remover_app" ]; then
-                        sed -i "/^${remover_app}$/d" "$ARQUIVO_APPS_PRIORITARIOS"
-                        echo -e "${VERMELHO}✅ App removido da lista${RESET}"
-                    fi
-                else
-                    echo -e "${AMARELO}⚠️  Lista de apps não existe.${RESET}"
-                fi
-                sleep 1
-                ;;
-            5)
-                echo "$APPS_PRIORITARIOS_PADRAO" > "$ARQUIVO_APPS_PRIORITARIOS"
-                echo -e "${VERDE}✅ Lista padrão restaurada${RESET}"
-                sleep 1
-                ;;
-            0)
-                return
-                ;;
-            *)
-                echo -e "${VERMELHO}Opção inválida!${RESET}"
-                sleep 1
-                ;;
-        esac
-    done
-}
-
-###############################################################################
 # VISUAL
 ###############################################################################
 
-barra_carregamento() {
+loading_bar() {
     clear
     echo -e "\n\033[1;36mCarregando Painel FERA ALPHA...\033[0m\n"
     printf "\033[1;32m[██████████████████] 100%%\033[0m\n"
     return
 }
 
-cabecalho() {
+print_header() {
     clear
     cols=$(stty size | awk '{print $2}')
     
@@ -737,13 +543,13 @@ cabecalho() {
     echo -e "\n\033[1;37m🔐 LOGIN OBRIGATÓRIO\033[0m\n"
 }
 
-entrada_login() {
+input_login() {
     echo -e "\033[1;37m👤 Usuário:\033[0m"
     echo -n "➤ "
-    read USUARIO
+    read USER
     echo -e "\033[1;37m🔒 Senha:\033[0m"
     echo -n "➤ "
-    read SENHA
+    read PASS
     echo ""
 }
 
@@ -759,25 +565,25 @@ bem_vindo() {
     clear
     echo -e "\033[1;32m✔ Login autorizado!\033[0m"
     
-    if [ -f "$ARQUIVO_LICENCA" ]; then
-        EXP=$(cat "$ARQUIVO_LICENCA" 2>/dev/null)
-        AGORA=$(date +%s)
+    if [ -f "$LICENSE_FILE" ]; then
+        EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
+        NOW=$(date +%s)
         
         if echo "$EXP" | grep -qE '^[0-9]+$'; then
-            DIFERENCA=$((EXP - AGORA))
-            DIAS=$((DIFERENCA / 86400))
-            if [ "$DIAS" -gt 365 ]; then
+            DIFF=$((EXP - NOW))
+            DAYS=$((DIFF / 86400))
+            if [ "$DAYS" -gt 365 ]; then
                 echo -e "\033[1;36m🌟 LICENÇA VIP ATIVADA!\033[0m"
                 echo -e "\033[1;33m📅 Expira em: $(date -d @$EXP '+%d/%m/%Y %H:%M')\033[0m"
-            elif [ "$DIAS" -gt 0 ]; then
-                echo -e "\033[1;33m📅 Dias restantes: $DIAS\033[0m"
+            elif [ "$DAYS" -gt 0 ]; then
+                echo -e "\033[1;33m📅 Dias restantes: $DAYS\033[0m"
             fi
         fi
     fi
     
-    if [ -f "$ARQUIVO_AUTO_UPDATE" ] && [ "$(cat "$ARQUIVO_AUTO_UPDATE")" = "1" ]; then
-        echo -e "\n${CIANO}🔄 Verificando atualizações...${RESET}"
-        verificar_atualizacao_auto
+    if [ -f "$AUTO_UPDATE_FILE" ] && [ "$(cat "$AUTO_UPDATE_FILE")" = "1" ]; then
+        echo -e "\n${CYAN}🔄 Verificando atualizações...${RESET}"
+        auto_update_check
     fi
     
     sleep 1
@@ -786,39 +592,39 @@ bem_vindo() {
 
 ###############################################################################
 
-VERMELHO="\033[1;31m"
-VERDE="\033[1;32m"
-AMARELO="\033[1;33m"
-CIANO="\033[1;36m"
+RED="\033[1;31m"
+GREEN="\033[1;32m"
+YELLOW="\033[1;33m"
+CYAN="\033[1;36m"
 MAGENTA="\033[1;35m"
 RESET="\033[0m"
-NEGRITO="\033[1m"
+BOLD="\033[1m"
 
-ICON_LIGADO="🟢"
-ICON_DESLIGADO="🔴"
-SETA="➤"
+ICON_ON="🟢"
+ICON_OFF="🔴"
+ARROW="➤"
 
-BANDEIRA_SPOOF="$MODDIR/spoof_ativado"
-ARQUIVO_SPOOF="$MODDIR/system.prop"
-ARMAZENAMENTO_ORIGINAL="$MODDIR/props_originais"
-DIRETORIO_BANDEIRAS="$MODDIR/bandeiras_desativadas"
-mkdir -p "$DIRETORIO_BANDEIRAS" 2>/dev/null
+SPOOF_FLAG="$MODDIR/spoof_enabled"
+SPOOF_FILE="$MODDIR/system.prop"
+ORIG_STORE="$MODDIR/original.props"
+FLAG_DIR="$MODDIR/disabled_flags"
+mkdir -p "$FLAG_DIR" 2>/dev/null
 
 salvar_props_originais
 
-ARQUIVO_TWEAKS_ATIVOS="$MODDIR/tweaks_ativos.txt"
+ENABLED_TWEAKS_FILE="$MODDIR/enabled_tweaks.txt"
 
 # =====================================================
 # GERENCIAMENTO CENTRALIZADO DE PROPS
 # =====================================================
 
-reconstruir_apenas_spoof() {
-    rm -f "$ARQUIVO_SPOOF" 2>/dev/null
-    touch "$ARQUIVO_SPOOF" 2>/dev/null
+rebuild_spoof_only() {
+    rm -f "$SPOOF_FILE" 2>/dev/null
+    touch "$SPOOF_FILE" 2>/dev/null
 
-    if [ -f "$BANDEIRA_SPOOF" ]; then
-        echo -e "\n# Spoof Realme 15 Pro\n" >> "$ARQUIVO_SPOOF"
-        cat >> "$ARQUIVO_SPOOF" <<'EOF'
+    if [ -f "$SPOOF_FLAG" ]; then
+        echo -e "\n# Spoof Realme 15 Pro\n" >> "$SPOOF_FILE"
+        cat >> "$SPOOF_FILE" <<'EOF'
 ro.product.model=RMX5101
 ro.product.brand=realme
 ro.product.name=realme15pro
@@ -827,150 +633,162 @@ ro.product.manufacturer=realme
 EOF
     fi
 
-    chmod 644 "$ARQUIVO_SPOOF" 2>/dev/null
+    chmod 644 "$SPOOF_FILE" 2>/dev/null
 }
 
-adicionar_props_tweaks() {
-    touch "$ARQUIVO_SPOOF" 2>/dev/null
-    echo -e "\n# Tweaks de Propriedades Ativos\n" >> "$ARQUIVO_SPOOF"
+append_tweaks_props() {
+    touch "$SPOOF_FILE" 2>/dev/null
+    echo -e "\n# Tweaks de Propriedades Ativos\n" >> "$SPOOF_FILE"
 
-    PROPS_TWEAKS=(
-        "USB Baixa Latência=persist.usb.low_latency_mode=1"
-        "Prioridade HID USB=vendor.usb.hid.priority=2"
-        "USB Alta Velocidade=persist.vendor.usb.high_speed=1"
-        "Potência USB Aprimorada=persist.vendor.usb.power=1"
-        "Anti-jitter USB (mouse)=vendor.usb.mouse.jitter_filter=0"
-        "Resposta Linear do Mouse=persist.sys.mouse.linear_response=1"
-        "Aceleração do Mouse DESLIGADA=persist.sys.pointer.acceleration=0"
-        "Modo Input Baixa Latência=persist.sys.input.low_latency_mode=1"
-        "GPU Baixa Latência=persist.sys.gpu.low_latency=1"
-        "Boost de Quadros GPU=persist.sys.gpu.frame_boost=1"
-        "Interrupções USB Baixa Latência=persist.vendor.usb.low_latency_interrupts=1"
+    TWEAK_PROPS=(
+        "USB RAW=vendor.usb.raw_input.enable=1"
+        "USB Low Latency=persist.usb.low_latency_mode=1"
+        "USB HID Priority=vendor.usb.hid.priority=2"
+        "USB High Speed=persist.vendor.usb.high_speed=1"
+        "USB Power Boost=persist.vendor.usb.power=1"
+        # REMOVIDO: "USB Hub Boost=vendor.usb.hub.boost=1"
+        "USB Mouse AntiJitter=vendor.usb.mouse.jitter_filter=0"
+        "Mouse Resposta Linear=persist.sys.mouse.linear_response=1"
+        "Mouse Aceleração OFF=persist.sys.pointer.acceleration=0"
+        "Input Low Latency Mode=persist.sys.input.low_latency_mode=1"
+        # REMOVIDO: "Input High Update Rate=persist.sys.input.high_update_rate=true"
+        "VSync OFF=debug.hwui.disable_vsync=0"
+        "GPU Low Latency=persist.sys.gpu.low_latency=1"
+        "GPU Frame Boost=persist.sys.gpu.frame_boost=1"
+        "HID Fastpath=vendor.hid.input.fastpath=1"
+        "USB Low Latency Interrupts=persist.vendor.usb.low_latency_interrupts=1"
+        # REMOVIDO: "Input Dispatch Fast=persist.sys.input.dispatch_fast=1"
+        # REMOVIDO: "Debug Input Low Latency=debug.input.low_latency=1"
         "Persist Sys CPU Boost=persist.sys.cpu.boost=0"
-        "Escala de Animação de Janela=settings:global:window_animation_scale=0"
-        "Escala de Animação de Transição=settings:global:transition_animation_scale=0"
-        "Escala de Duração do Animador=settings:global:animator_duration_scale=0"
-        "Prioridade de Input=persist.sys.input.priority=1"
-        "Filtro de Input=persist.sys.input.filter=0"
-        "Máximo de Eventos por Segundo=windowsmgr.max_events_per_sec=240"
-        "SF Latch Unsignaled=debug.sf.latch_unsignaled=0"
-        "Display Primário Externo=persist.sys.display.primary_external=1"
-        "HWUI Render Dirty Regions=debug.hwui.render_dirty_regions=false"
-        "Caminho de Vídeo Baixa Latência=persist.video.low_latency_path=1"
+        "Window Animation Scale=settings:global:window_animation_scale=0"
+        "Transition Animation Scale=settings:global:transition_animation_scale=0"
+        "Animator Duration Scale=settings:global:animator_duration_scale=0"
+        "Input Resample=persist.sys.input.resample=0"
+        "Input Priority=persist.sys.input.priority=1"
+        "Input Filter=persist.sys.input.filter=0"
+        "Max Events per Sec=windowsmgr.max_events_per_sec=120"
+        # REMOVIDO: "Video Low Latency Path=persist.video.low_latency_path=1"
+        # NOVAS PROPRIEDADES ADICIONADAS:
+        "Enhanced Processing=settings:global:enhanced_processing=1"
+        "Input Absolute Mode=persist.sys.input.absolute_mode=1"
+        "Input Relative Mode=persist.sys.input.relative_mode=0"
+        "SF Disable Backpressure=debug.sf.disable_backpressure=1"
+        "SF Latch Unsignaled=debug.sf.latch_unsignaled=1"
+        "Display Primary External=persist.sys.display.primary_external=1"
     )
 
-    for TWEAK in "${PROPS_TWEAKS[@]}"; do
+    for TWEAK in "${TWEAK_PROPS[@]}"; do
         NOME=$(echo "$TWEAK" | cut -d'=' -f1)
-        PROP_VALOR=$(echo "$TWEAK" | cut -d'=' -f2-)
+        PROP_VAL=$(echo "$TWEAK" | cut -d'=' -f2-)
         
-        if echo "$PROP_VALOR" | grep -q "^settings:"; then
-            NS=$(echo "$PROP_VALOR" | cut -d':' -f2)
-            CHAVE_VALOR=$(echo "$PROP_VALOR" | cut -d':' -f3)
-            CHAVE=$(echo "$CHAVE_VALOR" | cut -d'=' -f1)
-            VALOR=$(echo "$CHAVE_VALOR" | cut -d'=' -f2)
+        if echo "$PROP_VAL" | grep -q "^settings:"; then
+            NS=$(echo "$PROP_VAL" | cut -d':' -f2)
+            KEY_VAL=$(echo "$PROP_VAL" | cut -d':' -f3)
+            KEY=$(echo "$KEY_VAL" | cut -d'=' -f1)
+            VAL=$(echo "$KEY_VAL" | cut -d'=' -f2)
             
-            settings put "$NS" "$CHAVE" "$VALOR" 2>/dev/null
+            settings put "$NS" "$KEY" "$VAL" 2>/dev/null
             continue
         fi
 
-        if [ ! -f "$DIRETORIO_BANDEIRAS/$NOME" ]; then
-            chave_prop=$(echo "$PROP_VALOR" | cut -d'=' -f1)
-            if grep -q "^${chave_prop}=" "$ARQUIVO_SPOOF" 2>/dev/null; then
-                sed -i "s|^${chave_prop}=.*|${PROP_VALOR}|" "$ARQUIVO_SPOOF" 2>/dev/null || true
+        if [ ! -f "$FLAG_DIR/$NOME" ]; then
+            prop_key=$(echo "$PROP_VAL" | cut -d'=' -f1)
+            if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
+                sed -i "s|^${prop_key}=.*|${PROP_VAL}|" "$SPOOF_FILE" 2>/dev/null || true
             else
-                echo "$PROP_VALOR" >> "$ARQUIVO_SPOOF"
+                echo "$PROP_VAL" >> "$SPOOF_FILE"
             fi
-            setprop "$chave_prop" "$(echo "$PROP_VALOR" | cut -d'=' -f2)" 2>/dev/null
+            setprop "$prop_key" "$(echo "$PROP_VAL" | cut -d'=' -f2)" 2>/dev/null
         fi
     done
 
-    chmod 644 "$ARQUIVO_SPOOF" 2>/dev/null
+    chmod 644 "$SPOOF_FILE" 2>/dev/null
 }
 
-reconstruir_system_prop() {
-    reconstruir_apenas_spoof
-    adicionar_props_tweaks
+rebuild_system_prop() {
+    rebuild_spoof_only
+    append_tweaks_props
 }
 
-adicionar_linha_prop() {
-    chave_prop="$1"
-    valor_prop="$2"
-    if [ -z "$chave_prop" ]; then return; fi
-    touch "$ARQUIVO_SPOOF" 2>/dev/null
-    if grep -q "^${chave_prop}=" "$ARQUIVO_SPOOF" 2>/dev/null; then
-        sed -i "s|^${chave_prop}=.*|${chave_prop}=${valor_prop}|" "$ARQUIVO_SPOOF" 2>/dev/null || true
+add_prop_line() {
+    prop_key="$1"
+    prop_value="$2"
+    if [ -z "$prop_key" ]; then return; fi
+    touch "$SPOOF_FILE" 2>/dev/null
+    if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
+        sed -i "s|^${prop_key}=.*|${prop_key}=${prop_value}|" "$SPOOF_FILE" 2>/dev/null || true
     else
-        echo "${chave_prop}=${valor_prop}" >> "$ARQUIVO_SPOOF"
+        echo "${prop_key}=${prop_value}" >> "$SPOOF_FILE"
     fi
-    chmod 644 "$ARQUIVO_SPOOF" 2>/dev/null
+    chmod 644 "$SPOOF_FILE" 2>/dev/null
 }
 
-remover_linha_prop() {
-    chave_prop="$1"
-    [ -f "$ARQUIVO_SPOOF" ] || return
-    if grep -q "^${chave_prop}=" "$ARQUIVO_SPOOF" 2>/dev/null; then
-        sed -i "/^${chave_prop}=/d" "$ARQUIVO_SPOOF" 2>/dev/null || true
+remove_prop_line() {
+    prop_key="$1"
+    [ -f "$SPOOF_FILE" ] || return
+    if grep -q "^${prop_key}=" "$SPOOF_FILE" 2>/dev/null; then
+        sed -i "/^${prop_key}=/d" "$SPOOF_FILE" 2>/dev/null || true
     fi
 }
 
-ler_prompt() { printf "%s" "$1"; read -r "$2"; }
-pressionar_enter()  { printf "\nPressione ENTER para continuar..."; read -r _; }
+read_prompt() { printf "%s" "$1"; read -r "$2"; }
+press_enter()  { printf "\nPressione ENTER para continuar..."; read -r _; }
 
 ativar_tweak() {
     nome="$1"; cmd="$2"
-    BANDEIRA="$DIRETORIO_BANDEIRAS/$nome"
-    echo -e "\n${CIANO}${SETA} Ativando:${RESET} $nome"
+    FLAG="$FLAG_DIR/$nome"
+    echo -e "\n${CYAN}${ARROW} Ativando:${RESET} $nome"
 
-    rm -f "$BANDEIRA"
+    rm -f "$FLAG"
 
-    if ! grep -q "^$nome$" "$ARQUIVO_TWEAKS_ATIVOS" 2>/dev/null; then
-        echo "$nome" >> "$ARQUIVO_TWEAKS_ATIVOS"
+    if ! grep -q "^$nome$" "$ENABLED_TWEAKS_FILE" 2>/dev/null; then
+        echo "$nome" >> "$ENABLED_TWEAKS_FILE"
     fi
 
     if echo "$cmd" | grep -qE "^settings"; then
         eval "$cmd"
     elif echo "$cmd" | grep -qE "^setprop"; then
-        chave_prop=$(echo "$cmd" | awk '{print $2}')
-        valor_prop=$(echo "$cmd" | awk '{print $3}')
-        [ -n "$chave_prop" ] && setprop "$chave_prop" "$valor_prop" 2>/dev/null
-        adicionar_linha_prop "$chave_prop" "$valor_prop"
+        prop_key=$(echo "$cmd" | awk '{print $2}')
+        prop_value=$(echo "$cmd" | awk '{print $3}')
+        [ -n "$prop_key" ] && setprop "$prop_key" "$prop_value" 2>/dev/null
+        add_prop_line "$prop_key" "$prop_value"
     else
         eval "$cmd"
     fi
 
-    echo -e "${VERDE}✔ Aplicado: $nome${RESET}"
+    echo -e "${GREEN}✔ Aplicado: $nome${RESET}"
 }
 
 desativar_tweak() {
     nome="$1"; cmd="$2"
-    BANDEIRA="$DIRETORIO_BANDEIRAS/$nome"
-    echo -e "\n${CIANO}${SETA} Desativando:${RESET} $nome"
+    FLAG="$FLAG_DIR/$nome"
+    echo -e "\n${CYAN}${ARROW} Desativando:${RESET} $nome"
 
-    touch "$BANDEIRA"
+    touch "$FLAG"
 
-    if [ -f "$ARQUIVO_TWEAKS_ATIVOS" ]; then
-        sed -i "/^$nome$/d" "$ARQUIVO_TWEAKS_ATIVOS"
+    if [ -f "$ENABLED_TWEAKS_FILE" ]; then
+        sed -i "/^$nome$/d" "$ENABLED_TWEAKS_FILE"
     fi
 
     if echo "$cmd" | grep -qE "^settings"; then
         eval "$cmd"
     elif echo "$cmd" | grep -qE "^setprop"; then
-        chave_prop=$(echo "$cmd" | awk '{print $2}')
-        valor_prop=$(echo "$cmd" | awk '{print $3}')
-        [ -n "$chave_prop" ] && setprop "$chave_prop" "$valor_prop" 2>/dev/null
-        remover_linha_prop "$chave_prop"
+        prop_key=$(echo "$cmd" | awk '{print $2}')
+        prop_value=$(echo "$cmd" | awk '{print $3}')
+        [ -n "$prop_key" ] && setprop "$prop_key" "$prop_value" 2>/dev/null
+        remove_prop_line "$prop_key"
     else
         eval "$cmd"
     fi
 
-    echo -e "${VERMELHO}✔ Desativado: $nome${RESET}"
+    echo -e "${RED}✔ Desativado: $nome${RESET}"
 }
 
-verificar_configuracao() {
-    ns="$1"; chave="$2"; esperado="$3"
-    valor=$(settings get "$ns" "$chave" 2>/dev/null)
-    nv=$(echo "$valor" | tr '[:upper:]' '[:lower:]')
-    ne=$(echo "$esperado" | tr '[:upper:]' '[:lower:]')
+check_setting() {
+    ns="$1"; key="$2"; exp="$3"
+    val=$(settings get "$ns" "$key" 2>/dev/null)
+    nv=$(echo "$val" | tr '[:upper:]' '[:lower:]')
+    ne=$(echo "$exp" | tr '[:upper:]' '[:lower:]')
     [ "$nv" = "true" ] && nv="1"
     [ "$ne" = "true" ] && ne="1"
     if echo "$nv" | grep -Eq '^[0-9]+(\.[0-9]+)?$' && echo "$ne" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
@@ -979,11 +797,11 @@ verificar_configuracao() {
     fi
     [ "$nv" = "$ne" ]
 }
-verificar_prop() {
-    prop="$1"; esperado="$2"
-    valor=$(getprop "$prop" 2>/dev/null)
-    nv=$(echo "$valor" | tr '[:upper:]' '[:lower:]')
-    ne=$(echo "$esperado" | tr '[:upper:]' '[:lower:]')
+check_prop() {
+    prop="$1"; exp="$2"
+    val=$(getprop "$prop" 2>/dev/null)
+    nv=$(echo "$val" | tr '[:upper:]' '[:lower:]')
+    ne=$(echo "$exp" | tr '[:upper:]' '[:lower:]')
     [ "$nv" = "true" ] && nv="1"
     [ "$ne" = "true" ] && ne="1"
     if echo "$nv" | grep -Eq '^[0-9]+(\.[0-9]+)?$' && echo "$ne" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
@@ -992,27 +810,27 @@ verificar_prop() {
     fi
     [ "$nv" = "$ne" ]
 }
-icone() { if "$@"; then printf "${VERDE}🟢${RESET}"; else printf "${VERMELHO}🔴${RESET}"; fi; }
+icon() { if "$@"; then printf "${GREEN}🟢${RESET}"; else printf "${RED}🔴${RESET}"; fi; }
 
-verificar_aceleracao_mouse() {
-    ACELERACAO=$(getprop persist.sys.pointer.acceleration 2>/dev/null)
-    if [ "$ACELERACAO" = "0" ]; then 
-        printf "${VERDE}🟢${RESET}"
+check_mouse_acceleration() {
+    ACEL=$(getprop persist.sys.pointer.acceleration 2>/dev/null)
+    if [ "$ACEL" = "0" ]; then 
+        printf "${GREEN}🟢${RESET}"
     else
-        printf "${VERMELHO}🔴${RESET}"
+        printf "${RED}🔴${RESET}"
     fi
 }
 
-verificar_prioridade_video_externo() {
-    PRIORIDADE=$(getprop vendor.display.external_priority 2>/dev/null)
-    if [ "$PRIORIDADE" = "1" ]; then 
-        printf "${VERDE}🟢${RESET}"
+check_input_high_update_rate() {
+    HIGH_RATE=$(getprop persist.sys.input.high_update_rate 2>/dev/null)
+    if [ "$HIGH_RATE" = "true" ]; then 
+        printf "${GREEN}🟢${RESET}"
     else
-        printf "${VERMELHO}🔴${RESET}"
+        printf "${RED}🔴${RESET}"
     fi
 }
 
-mapear_tweak_para_comando() {
+map_tweak_to_cmd() {
     case "$1" in
         "Tempo mínimo do toque") echo "$submenu_1_cmd_on" ;;
         "Tempo do toque longo") echo "$submenu_2_cmd_on" ;;
@@ -1020,6 +838,7 @@ mapear_tweak_para_comando() {
         "Ações automáticas mais rápidas") echo "$submenu_4_cmd_on" ;;
         "Permitir toques no espelhamento") echo "$submenu_5_cmd_on" ;;
         "Desbloquear desempenho do sistema") echo "$submenu_6_cmd_on" ;;
+        "Entrada USB sem filtro (RAW)") echo "$submenu_7_cmd_on" ;;
         "USB baixa latência") echo "$submenu_8_cmd_on" ;;
         "Prioridade HID") echo "$submenu_9_cmd_on" ;;
         "Modo High Speed USB") echo "$submenu_10_cmd_on" ;;
@@ -1028,60 +847,81 @@ mapear_tweak_para_comando() {
         "Resposta linear do mouse (1:1)") echo "$submenu_14_cmd_on" ;;
         "Aceleração do mouse desligada") echo "$submenu_15_cmd_on" ;;
         "Input: baixa latência") echo "$submenu_17_cmd_on" ;;
+        # REMOVIDO: "Input High Update Rate" echo "$submenu_18_cmd_on" ;;
+        "VSync desligado") echo "$submenu_20_cmd_on" ;;
         "GPU: baixa latência") echo "$submenu_21_cmd_on" ;;
         "GPU: aceleração de quadros") echo "$submenu_22_cmd_on" ;;
         "Tela interna 120Hz (fixo)") echo "$submenu_23_cmd_on" ;;
         "Prioridade de vídeo externa") echo "$submenu_26_cmd_on" ;;
+        "Fastpath HID (rota direta)") echo "$submenu_31_cmd_on" ;;
         "Interrupções USB baixa latência") echo "$submenu_36_cmd_on" ;;
+        # REMOVIDO: "Despacho rápido de input" echo "$submenu_38_cmd_on" ;;
+        # REMOVIDO: "Debug Input Low Latency" echo "$submenu_57_cmd_on" ;;
         "Persist Sys CPU Boost") echo "$submenu_65_cmd_on" ;;
         "Window Animation Scale") echo "$submenu_66_cmd_on" ;;
         "Transition Animation Scale") echo "$submenu_67_cmd_on" ;;
         "Animator Duration Scale") echo "$submenu_68_cmd_on" ;;
+        "Input Resample") echo "$submenu_32_cmd_on" ;;
         "Input Priority") echo "$submenu_33_cmd_on" ;;
         "Input Filter") echo "$submenu_34_cmd_on" ;;
         "Max Events per Sec") echo "$submenu_35_cmd_on" ;;
+        # REMOVIDO: "Video Low Latency Path" echo "$submenu_36_cmd_on" ;;
+        # NOVOS:
+        "Enhanced Processing") echo "$submenu_69_cmd_on" ;;
+        "Input Absolute Mode") echo "$submenu_70_cmd_on" ;;
+        "Input Relative Mode") echo "$submenu_71_cmd_on" ;;
+        "SF Disable Backpressure") echo "$submenu_72_cmd_on" ;;
         "SF Latch Unsignaled") echo "$submenu_73_cmd_on" ;;
         "Display Primary External") echo "$submenu_74_cmd_on" ;;
-        "HWUI Render Dirty Regions") echo "$submenu_75_cmd_on" ;;
-        "Video Low Latency Path") echo "$submenu_76_cmd_on" ;;
         *) echo "" ;;
     esac
 }
 
-aplicar_tweaks_ativos_arquivo() {
-    if [ ! -f "$ARQUIVO_TWEAKS_ATIVOS" ]; then
+apply_enabled_tweaks_from_file() {
+    if [ ! -f "$ENABLED_TWEAKS_FILE" ]; then
         return
     fi
 
     while IFS= read -r nome; do
-        cmd=$(mapear_tweak_para_comando "$nome")
+        cmd=$(map_tweak_to_cmd "$nome")
         if [ -n "$cmd" ]; then
             eval "$cmd"
         fi
-    done < "$ARQUIVO_TWEAKS_ATIVOS"
+    done < "$ENABLED_TWEAKS_FILE"
 }
 
-ativar_spoof() {
-    if [ ! -f "$ARMAZENAMENTO_ORIGINAL" ]; then
-        salvar_props_originais
+save_original_props() {
+    {
+        echo "ro.product.model=$(getprop ro.product.model 2>/dev/null)"
+        echo "ro.product.brand=$(getprop ro.product.brand 2>/dev/null)"
+        echo "ro.product.name=$(getprop ro.product.name 2>/dev/null)"
+        echo "ro.product.device=$(getprop ro.product.device 2/dev/null)"
+        echo "ro.product.manufacturer=$(getprop ro.product.manufacturer 2>/dev/null)"
+    } > "$ORIG_STORE"
+    chmod 644 "$ORIG_STORE" 2>/dev/null
+}
+
+enable_spoof() {
+    if [ ! -f "$ORIG_STORE" ]; then
+        save_original_props
     fi
 
-    touch "$BANDEIRA_SPOOF"
-    reconstruir_apenas_spoof
+    touch "$SPOOF_FLAG"
+    rebuild_spoof_only
 
-    echo -e "${VERDE}✔ Spoof Realme 15 Pro ativado.${RESET}"
-    echo -e "${AMARELO}Obs: Algumas mudanças de prop só aplicam após reboot de apps/sistema.${RESET}"
+    echo -e "${GREEN}✔ Spoof Realme 15 Pro ativado.${RESET}"
+    echo -e "${YELLOW}Obs: Algumas mudanças de prop só aplicam após reboot de apps/sistema.${RESET}"
 }
 
-desativar_spoof() {
-    rm -f "$BANDEIRA_SPOOF"
-    reconstruir_apenas_spoof
+disable_spoof() {
+    rm -f "$SPOOF_FLAG"
+    rebuild_spoof_only
 
-    echo -e "${VERDE}✔ Spoof desativado — sistema voltará aos valores originais (ou após reboot).${RESET}"
+    echo -e "${GREEN}✔ Spoof desativado — sistema voltará aos valores originais (ou após reboot).${RESET}"
 }
 
-status_spoof() {
-    if [ -f "$BANDEIRA_SPOOF" ] && [ -f "$ARQUIVO_SPOOF" ]; then
+spoof_status() {
+    if [ -f "$SPOOF_FLAG" ] && [ -f "$SPOOF_FILE" ]; then
         return 0
     fi
     return 1
@@ -1091,68 +931,90 @@ submenu_spoof() {
     while true; do
         clear
         printf '\033c'
-        echo -e "${NEGRITO}${CIANO}=== Ativar / Desativar Spoof 120 FPS (Realme 15 Pro) ===${RESET}\n"
-        if status_spoof; then
-            echo -e "${VERDE}Status: Ativado${RESET}\n"
+        echo -e "${BOLD}${CYAN}=== Ativar / Desativar Spoof 120 FPS (Realme 15 Pro) ===${RESET}\n"
+        if spoof_status; then
+            echo -e "${GREEN}Status: Ativado${RESET}\n"
             echo "1) Desativar spoof (remover spoof do módulo)"
         else
-            echo -e "${VERMELHO}Status: Desativado${RESET}\n"
+            echo -e "${RED}Status: Desativado${RESET}\n"
             echo "1) Ativar spoof (aplicar spoof Realme 15 Pro)"
         fi
         echo "0) Voltar"
-        ler_prompt "> " opcao_spoof
-        case "$opcao_spoof" in
+        read_prompt "> " __op
+        case "$__op" in
             1)
-                if status_spoof; then
-                    desativar_spoof
+                if spoof_status; then
+                    disable_spoof
                 else
-                    ativar_spoof
+                    enable_spoof
                 fi
-                pressionar_enter
+                press_enter
                 ;;
             0) break ;;
-            *) echo -e "${VERMELHO}Opção inválida${RESET}"; sleep 1 ;;
+            *) echo -e "${RED}Opção inválida${RESET}"; sleep 1 ;;
         esac
     done
 }
 
-alternar_tweak() {
-    nome="$1"; cmd_ligado="$2"; cmd_desligado="$3"
+toggle_tweak() {
+    nome="$1"; on_cmd="$2"; off_cmd="$3"
 
-    if echo "$cmd_ligado" | grep -qE "^settings"; then
-        ns=$(echo "$cmd_ligado" | awk '{print $3}')
-        chave=$(echo "$cmd_ligado" | awk '{print $4}')
-        valor=$(echo "$cmd_ligado" | awk '{print $5}')
-        if verificar_configuracao "$ns" "$chave" "$valor"; then
-            desativar_tweak "$nome" "$cmd_desligado"
+    if echo "$on_cmd" | grep -qE "^settings"; then
+        ns=$(echo "$on_cmd" | awk '{print $3}')
+        key=$(echo "$on_cmd" | awk '{print $4}')
+        val=$(echo "$on_cmd" | awk '{print $5}')
+        if check_setting "$ns" "$key" "$val"; then
+            desativar_tweak "$nome" "$off_cmd"
         else
-            ativar_tweak "$nome" "$cmd_ligado"
+            ativar_tweak "$nome" "$on_cmd"
         fi
-    elif echo "$cmd_ligado" | grep -qE "^setprop"; then
-        prop=$(echo "$cmd_ligado" | awk '{print $2}')
-        valor=$(echo "$cmd_ligado" | awk '{print $3}')
-        if verificar_prop "$prop" "$valor"; then
-            desativar_tweak "$nome" "$cmd_desligado"
+    elif echo "$on_cmd" | grep -qE "^setprop"; then
+        prop=$(echo "$on_cmd" | awk '{print $2}')
+        val=$(echo "$on_cmd" | awk '{print $3}')
+        if check_prop "$prop" "$val"; then
+            desativar_tweak "$nome" "$off_cmd"
         else
-            ativar_tweak "$nome" "$cmd_ligado"
+            ativar_tweak "$nome" "$on_cmd"
         fi
     else
-        ativar_tweak "$nome" "$cmd_ligado"
+        ativar_tweak "$nome" "$on_cmd"
     fi
     sleep 0.15
 }
 
 # =====================================================
-# SUBMENUS (chamadas) — comandos usados pelo alternar
+# SUBMENUS (chamadas) — comandos usados pelo toggle
 # =====================================================
 
-# ALTERADO: 80 → 60
-submenu_1_cmd_on="settings put secure tap_duration_threshold 60"
+# ALTERAÇÕES APLICADAS:
+# 1. gamepad.latency_reduction 1 REMOVIDO
+# 2. persist.video.duplicate.display 0 REMOVIDO  
+# 3. vendor.usb.hub.boost 1 REMOVIDO
+# 4. windowsmgr.max_events_per_sec 120 (ALTERADO de 90 para 120)
+# 5. multi_press_timeout 130 (ALTERADO de 150 para 130)
+# 6. persist.sys.input.high_update_rate true REMOVIDO
+# 7. long_press_timeout 300 (ALTERADO de 350 para 300)
+# 8. debug.input.low_latency 1 REMOVIDO
+# 9. persist.vendor.usb.low_latency_interrupts 0 ALTERADO para 1
+# 10. persist.sys.input.dispatch_fast 1 REMOVIDO
+# 11. persist.video.low_latency_path 1 REMOVIDO
+# 12. persist.sys.cpu.boost 1 REMOVIDO
+# 13. debug.hwui.disable_vsync 0 REMOVIDO
+# 14. NOVOS ADICIONADOS:
+#    - settings put global enhanced_processing 1
+#    - setprop persist.sys.input.absolute_mode 1
+#    - setprop persist.sys.input.relative_mode 0
+#    - setprop debug.sf.disable_backpressure 1
+#    - setprop debug.sf.latch_unsignaled 1
+#    - setprop persist.sys.display.primary_external 1
+
+submenu_1_cmd_on="settings put secure tap_duration_threshold 80"
 submenu_1_cmd_off="settings put secure tap_duration_threshold 100"
+# ALTERADO: long_press_timeout 350 -> 300
 submenu_2_cmd_on="settings put secure long_press_timeout 300"
 submenu_2_cmd_off="settings put secure long_press_timeout 500"
-# ALTERADO: 130 → 110
-submenu_3_cmd_on="settings put secure multi_press_timeout 110"
+# ALTERADO: multi_press_timeout 150 -> 130
+submenu_3_cmd_on="settings put secure multi_press_timeout 130"
 submenu_3_cmd_off="settings put secure multi_press_timeout 300"
 submenu_4_cmd_on="settings put secure accessibility_auto_action_delay 200"
 submenu_4_cmd_off="settings put secure accessibility_auto_action_delay 200"
@@ -1161,6 +1023,8 @@ submenu_5_cmd_off="settings put global block_untrusted_touches 1"
 submenu_6_cmd_on="settings put global restricted_device_performance '0,0'"
 submenu_6_cmd_off="settings put global restricted_device_performance '1,1'"
 
+submenu_7_cmd_on="setprop vendor.usb.raw_input.enable 1"
+submenu_7_cmd_off="setprop vendor.usb.raw_input.enable 0"
 submenu_8_cmd_on="setprop persist.usb.low_latency_mode 1"
 submenu_8_cmd_off="setprop persist.usb.low_latency_mode 0"
 submenu_9_cmd_on="setprop vendor.usb.hid.priority 2"
@@ -1169,6 +1033,9 @@ submenu_10_cmd_on="setprop persist.vendor.usb.high_speed 1"
 submenu_10_cmd_off="setprop persist.vendor.usb.high_speed 0"
 submenu_11_cmd_on="setprop persist.vendor.usb.power 1"
 submenu_11_cmd_off="setprop persist.vendor.usb.power 0"
+# REMOVIDO: USB Hub Boost
+# submenu_12_cmd_on="setprop vendor.usb.hub.boost 1"
+# submenu_12_cmd_off="setprop vendor.usb.hub.boost 0"
 submenu_13_cmd_on="setprop vendor.usb.mouse.jitter_filter 0"
 submenu_13_cmd_off="setprop vendor.usb.mouse.jitter_filter 1"
 
@@ -1180,6 +1047,14 @@ submenu_15_cmd_off="setprop persist.sys.pointer.acceleration 1"
 submenu_17_cmd_on="setprop persist.sys.input.low_latency_mode 1"
 submenu_17_cmd_off="setprop persist.sys.input.low_latency_mode 0"
 
+# REMOVIDO: Input High Update Rate
+# submenu_18_cmd_on="setprop persist.sys.input.high_update_rate true"
+# submenu_18_cmd_off="setprop persist.sys.input.high_update_rate false"
+
+# REMOVIDO: VSync desligado
+# submenu_20_cmd_on="setprop debug.hwui.disable_vsync 0"
+# submenu_20_cmd_off="setprop debug.hwui.disable_vsync 1"
+
 submenu_21_cmd_on="setprop persist.sys.gpu.low_latency 1"
 submenu_21_cmd_off="setprop persist.sys.gpu.low_latency 0"
 submenu_22_cmd_on="setprop persist.sys.gpu.frame_boost 1"
@@ -1188,8 +1063,22 @@ submenu_22_cmd_off="setprop persist.sys.gpu.frame_boost 0"
 submenu_23_cmd_on="settings put system peak_refresh_rate 120; settings put system min_refresh_rate 120"
 submenu_23_cmd_off="settings delete system peak_refresh_rate; settings delete system.min_refresh_rate"
 
+# REMOVIDO: persist.video.duplicate.display
+# submenu_25_cmd_on="setprop persist.video.duplicate.display 0"
+# submenu_25_cmd_off="setprop persist.video.duplicate.display 0"
 submenu_26_cmd_on="setprop vendor.display.external_priority 1"
 submenu_26_cmd_off="setprop vendor.display.external_priority 0"
+
+# REMOVIDO: gamepad.latency_reduction
+# submenu_28_cmd_on="settings put global gamepad.latency_reduction 1"
+# submenu_28_cmd_off="settings delete global gamepad.latencia_reduction"
+
+submenu_31_cmd_on="setprop vendor.hid.input.fastpath 1"
+submenu_31_cmd_off="setprop vendor.hid.input.fastpath 0"
+
+# Novas propriedades adicionadas
+submenu_32_cmd_on="setprop persist.sys.input.resample 0"
+submenu_32_cmd_off="setprop persist.sys.input.resample 1"
 
 submenu_33_cmd_on="setprop persist.sys.input.priority 1"
 submenu_33_cmd_off="setprop persist.sys.input.priority 0"
@@ -1197,16 +1086,27 @@ submenu_33_cmd_off="setprop persist.sys.input.priority 0"
 submenu_34_cmd_on="setprop persist.sys.input.filter 0"
 submenu_34_cmd_off="setprop persist.sys.input.filter 1"
 
-# ALTERADO: 90 → 240
-submenu_35_cmd_on="setprop windowsmgr.max_events_per_sec 240"
+# ALTERADO: windowsmgr.max_events_per_sec 90 -> 120
+submenu_35_cmd_on="setprop windowsmgr.max_events_per_sec 120"
 submenu_35_cmd_off="setprop windowsmgr.max_events_per_sec 60"
 
+# ALTERADO: persist.vendor.usb.low_latency_interrupts 0 -> 1
 submenu_36_cmd_on="setprop persist.vendor.usb.low_latency_interrupts 1"
 submenu_36_cmd_off="setprop persist.vendor.usb.low_latency_interrupts 0"
 
+# REMOVIDO: Input Dispatch Fast
+# submenu_38_cmd_on="setprop persist.sys.input.dispatch_fast 1"
+# submenu_38_cmd_off="setprop persist.sys.input.dispatch_fast 0"
+
+# REMOVIDO: Debug Input Low Latency
+# submenu_57_cmd_on="setprop debug.input.low_latency 1"
+# submenu_57_cmd_off="setprop debug.input.low_latency 0"
+
+# REMOVIDO: CPU boost persistente
 submenu_65_cmd_on="setprop persist.sys.cpu.boost 0"
 submenu_65_cmd_off="setprop persist.sys.cpu.boost 0"
 
+# Configurações de animação
 submenu_66_cmd_on="settings put global window_animation_scale 0"
 submenu_66_cmd_off="settings put global window_animation_scale 1"
 submenu_67_cmd_on="settings put global transition_animation_scale 0"
@@ -1214,20 +1114,27 @@ submenu_67_cmd_off="settings put global transition_animation_scale 1"
 submenu_68_cmd_on="settings put global animator_duration_scale 0"
 submenu_68_cmd_off="settings put global animator_duration_scale 1"
 
-submenu_73_cmd_on="setprop debug.sf.latch_unsignaled 0"
+# NOVAS PROPRIEDADES ADICIONADAS
+submenu_69_cmd_on="settings put global enhanced_processing 1"
+submenu_69_cmd_off="settings delete global enhanced_processing"
+
+submenu_70_cmd_on="setprop persist.sys.input.absolute_mode 1"
+submenu_70_cmd_off="setprop persist.sys.input.absolute_mode 0"
+
+submenu_71_cmd_on="setprop persist.sys.input.relative_mode 0"
+submenu_71_cmd_off="setprop persist.sys.input.relative_mode 1"
+
+submenu_72_cmd_on="setprop debug.sf.disable_backpressure 1"
+submenu_72_cmd_off="setprop debug.sf.disable_backpressure 0"
+
+submenu_73_cmd_on="setprop debug.sf.latch_unsignaled 1"
 submenu_73_cmd_off="setprop debug.sf.latch_unsignaled 0"
 
 submenu_74_cmd_on="setprop persist.sys.display.primary_external 1"
 submenu_74_cmd_off="setprop persist.sys.display.primary_external 0"
 
-submenu_75_cmd_on="setprop debug.hwui.render_dirty_regions false"
-submenu_75_cmd_off="setprop debug.hwui.render_dirty_regions true"
-
-submenu_76_cmd_on="setprop persist.video.low_latency_path 1"
-submenu_76_cmd_off="setprop persist.video.low_latency_path 0"
-
-aplicar_performance_segura() {
-    echo -e "${CIANO}${SETA} Ativando modo PERFORMANCE ULTRA SEGURO...${RESET}"
+apply_safe_performance() {
+    echo -e "${CYAN}${ARROW} Ativando modo PERFORMANCE ULTRA SEGURO...${RESET}"
     
     echo "🔧 Abordagem conservadora - núcleos 0-2 serão IGNORADOS"
     
@@ -1246,12 +1153,12 @@ aplicar_performance_segura() {
             cpu_num=$(basename "$cpu" | sed 's/cpu//')
             
             if [ -f "$cpu/cpufreq/scaling_available_governors" ]; then
-                governadores_disponiveis=$(cat "$cpu/cpufreq/scaling_available_governors")
+                avail_govs=$(cat "$cpu/cpufreq/scaling_available_governors")
                 
-                if echo "$governadores_disponiveis" | grep -q "performance"; then
+                if echo "$avail_govs" | grep -q "performance"; then
                     echo "performance" > "$cpu/cpufreq/scaling_governor" 2>/dev/null
                     echo "🚀 CPU$cpu_num: performance ativado"
-                elif echo "$governadores_disponiveis" | grep -q "schedutil"; then
+                elif echo "$avail_govs" | grep -q "schedutil"; then
                     echo "schedutil" > "$cpu/cpufreq/scaling_governor" 2>/dev/null
                     echo "⚡ CPU$cpu_num: schedutil ativado"
                 fi
@@ -1273,33 +1180,33 @@ aplicar_performance_segura() {
     setprop persist.sys.perf.high 1
     setprop persist.vendor.perf.gaming 1
     
-    echo -e "${VERDE}✅ PERFORMANCE ULTRA SEGURO ATIVADO!${RESET}"
-    echo -e "${AMARELO}⚠️  Núcleos 0-2 não foram alterados para evitar reinícios${RESET}"
+    echo -e "${GREEN}✅ PERFORMANCE ULTRA SEGURO ATIVADO!${RESET}"
+    echo -e "${YELLOW}⚠️  Núcleos 0-2 não foram alterados para evitar reinícios${RESET}"
 }
 
 restaurar_tudo_padrao() {
-    echo -e "${CIANO}${SETA} Restaurando TODAS as configurações para padrão...${RESET}"
+    echo -e "${CYAN}${ARROW} Restaurando TODAS as configurações para padrão...${RESET}"
     
-    echo "🔄 Restaurando governadores de CPU..."
+    echo "🔄 Restaurando governors de CPU..."
     for cpu in /sys/devices/system/cpu/cpu[0-9]*; do
         if [ -d "$cpu/cpufreq" ]; then
             cpu_num=$(basename "$cpu" | sed 's/cpu//')
             
             if [ -f "$cpu/cpufreq/scaling_available_governors" ]; then
-                governadores_disponiveis=$(cat "$cpu/cpufreq/scaling_available_governors")
+                avail_govs=$(cat "$cpu/cpufreq/scaling_available_governors")
                 
-                if echo "$governadores_disponiveis" | grep -q "schedutil"; then
+                if echo "$avail_govs" | grep -q "schedutil"; then
                     echo "schedutil" > "$cpu/cpufreq/scaling_governor" 2>/dev/null
-                elif echo "$governadores_disponiveis" | grep -q "interactive"; then
+                elif echo "$avail_govs" | grep -q "interactive"; then
                     echo "interactive" > "$cpu/cpufreq/scaling_governor" 2>/dev/null
                 fi
             fi
             
-            freq_min=$(cat "$cpu/cpufreq/cpuinfo_min_freq" 2>/dev/null)
-            freq_max=$(cat "$cpu/cpufreq/cpuinfo_max_freq" 2>/dev/null)
+            min_freq=$(cat "$cpu/cpufreq/cpuinfo_min_freq" 2>/dev/null)
+            max_freq=$(cat "$cpu/cpufreq/cpuinfo_max_freq" 2>/dev/null)
             
-            [ -n "$freq_min" ] && echo $freq_min > "$cpu/cpufreq/scaling_min_freq" 2>/dev/null
-            [ -n "$freq_max" ] && echo $freq_max > "$cpu/cpufreq/scaling_max_freq" 2>/dev/null
+            [ -n "$min_freq" ] && echo $min_freq > "$cpu/cpufreq/scaling_min_freq" 2>/dev/null
+            [ -n "$max_freq" ] && echo $max_freq > "$cpu/cpufreq/scaling_max_freq" 2>/dev/null
         fi
     done
     
@@ -1319,44 +1226,44 @@ restaurar_tudo_padrao() {
     setprop persist.vendor.gpu.max_performance 0
     setprop persist.vendor.power_profile balanced
     
-    echo -e "${VERDE}✅ TODAS as configurações foram restauradas para padrão!${RESET}"
-    echo -e "${AMARELO}Algumas mudanças podem requerer reinício para efeito completo.${RESET}"
+    echo -e "${GREEN}✅ TODAS as configurações foram restauradas para padrão!${RESET}"
+    echo -e "${YELLOW}Algumas mudanças podem requerer reinício para efeito completo.${RESET}"
 }
 
-mostrar_status_performance() {
-    echo -e "${CIANO}${SETA} Status de Performance Atual:${RESET}"
+show_performance_status() {
+    echo -e "${CYAN}${ARROW} Status de Performance Atual:${RESET}"
     
     echo ""
-    echo "=== STATUS CPU ==="
+    echo "=== CPU STATUS ==="
     echo "Núcleos ativos: $(grep '^processor' /proc/cpuinfo | wc -l)"
     
     for cpu in /sys/devices/system/cpu/cpu[0-9]*; do
         if [ -d "$cpu/cpufreq" ]; then
             cpu_num=$(basename $cpu | sed 's/cpu//')
-            governador=$(cat $cpu/cpufreq/scaling_governor 2>/dev/null || echo "N/A")
-            freq_atual=$(cat $cpu/cpufreq/scaling_cur_freq 2>/dev/null || echo "N/A")
-            freq_max=$(cat $cpu/cpufreq/scaling_max_freq 2>/dev/null || echo "N/A")
+            gov=$(cat $cpu/cpufreq/scaling_governor 2>/dev/null || echo "N/A")
+            cur_freq=$(cat $cpu/cpufreq/scaling_cur_freq 2>/dev/null || echo "N/A")
+            max_freq=$(cat $cpu/cpufreq/scaling_max_freq 2>/dev/null || echo "N/A")
             
-            if [ "$freq_atual" != "N/A" ] && [ "$freq_atual" -gt 1000 ]; then
-                freq_atual=$((freq_atual / 1000))"MHz"
+            if [ "$cur_freq" != "N/A" ] && [ "$cur_freq" -gt 1000 ]; then
+                cur_freq=$((cur_freq / 1000))"MHz"
             fi
-            if [ "$freq_max" != "N/A" ] && [ "$freq_max" -gt 1000 ]; then
-                freq_max=$((freq_max / 1000))"MHz"
+            if [ "$max_freq" != "N/A" ] && [ "$max_freq" -gt 1000 ]; then
+                max_freq=$((max_freq / 1000))"MHz"
             fi
             
             if [ "$cpu_num" -lt 3 ]; then
-                echo "⚠️  CPU$cpu_num: $governador | Freq: $freq_atual / Max: $freq_max (NÃO ALTERAR)"
+                echo "⚠️  CPU$cpu_num: $gov | Freq: $cur_freq / Max: $max_freq (NÃO ALTERAR)"
             else
-                echo "✅ CPU$cpu_num: $governador | Freq: $freq_atual / Max: $freq_max"
+                echo "✅ CPU$cpu_num: $gov | Freq: $cur_freq / Max: $max_freq"
             fi
         fi
     done
     
     echo ""
-    echo "=== STATUS GPU ==="
+    echo "=== GPU STATUS ==="
     if [ -f "/sys/class/kgsl/kgsl-3d0/gpuclk" ]; then
-        clock_gpu=$(cat /sys/class/kgsl/kgsl-3d0/gpuclk)
-        echo "Clock GPU: $((clock_gpu / 1000000))MHz"
+        gpu_clk=$(cat /sys/class/kgsl/kgsl-3d0/gpuclk)
+        echo "GPU Clock: $((gpu_clk / 1000000))MHz"
     fi
     
     echo ""
@@ -1373,26 +1280,26 @@ mostrar_status_performance() {
     done
     
     echo ""
-    echo "=== MEMÓRIA ==="
+    echo "=== MEMORY ==="
     free -h | grep Mem | awk '{print "Total: " $2 " | Usada: " $3 " | Livre: " $4}'
     
-    pressionar_enter
+    press_enter
 }
 
-aplicar_performance_extrema() {
-    echo -e "${VERMELHO}${SETA} ⚠️  ATIVANDO MODO EXTREMO (RISCO ALTO DE REINÍCIO) ⚠️${RESET}"
-    echo -e "${AMARELO}Este modo força todos os núcleos no máximo e PODE CAUSAR REINÍCIOS IMEDIATOS!${RESET}"
+apply_extreme_performance() {
+    echo -e "${RED}${ARROW} ⚠️  ATIVANDO MODO EXTREME (RISCO ALTO DE REINÍCIO) ⚠️${RESET}"
+    echo -e "${YELLOW}Este modo força todos os núcleos no máximo e PODE CAUSAR REINÍCIOS IMEDIATOS!${RESET}"
     
-    ler_prompt "Continuar? (s/N): " confirmar
-    if [ "$confirmar" != "s" ] && [ "$confirmar" != "S" ]; then
-        echo -e "${AMARELO}Cancelado.${RESET}"
+    read_prompt "Continuar? (s/N): " confirm
+    if [ "$confirm" != "s" ] && [ "$confirm" != "S" ]; then
+        echo -e "${YELLOW}Cancelado.${RESET}"
         return 1
     fi
     
-    echo -e "${VERMELHO}ALERTA: Esta configuração provavelmente causará reinício!${RESET}"
-    ler_prompt "Tem certeza absoluta? (s/N): " confirmar2
-    if [ "$confirmar2" != "s" ] && [ "$confirmar2" != "S" ]; then
-        echo -e "${AMARELO}Cancelado por segurança.${RESET}"
+    echo -e "${RED}ALERTA: Esta configuração provavelmente causará reinício!${RESET}"
+    read_prompt "Tem certeza absoluta? (s/N): " confirm2
+    if [ "$confirm2" != "s" ] && [ "$confirm2" != "S" ]; then
+        echo -e "${YELLOW}Cancelado por segurança.${RESET}"
         return 1
     fi
     
@@ -1400,23 +1307,23 @@ aplicar_performance_extrema() {
         if [ -d "$cpu/cpufreq" ]; then
             echo "performance" > "$cpu/cpufreq/scaling_governor" 2>/dev/null
             
-            freq_max=$(cat "$cpu/cpufreq/cpuinfo_max_freq" 2>/dev/null)
-            if [ -n "$freq_max" ]; then
-                echo $freq_max > "$cpu/cpufreq/scaling_min_freq" 2>/dev/null
-                echo $freq_max > "$cpu/cpufreq/scaling_max_freq" 2>/dev/null
+            max_freq=$(cat "$cpu/cpufreq/cpuinfo_max_freq" 2>/dev/null)
+            if [ -n "$max_freq" ]; then
+                echo $max_freq > "$cpu/cpufreq/scaling_min_freq" 2>/dev/null
+                echo $max_freq > "$cpu/cpufreq/scaling_max_freq" 2>/dev/null
             fi
         fi
     done
     
-    echo -e "${VERDE}✅ MODO EXTREMO ATIVADO!${RESET}"
-    echo -e "${VERMELHO}🚨 ALERTA: DISPOSITIVO PODE REINICIAR A QUALQUER MOMENTO!${RESET}"
-    echo -e "${VERMELHO}🚨 NÚCLEOS 0-2 FORÇADOS EM PERFORMANCE MÁXIMA - RISCO MUITO ALTO!${RESET}"
+    echo -e "${GREEN}✅ EXTREME MODE ATIVADO!${RESET}"
+    echo -e "${RED}🚨 ALERTA: DISPOSITIVO PODE REINICIAR A QUALQUER MOMENTO!${RESET}"
+    echo -e "${RED}🚨 NÚCLEOS 0-2 FORÇADOS EM PERFORMANCE MÁXIMA - RISCO MUITO ALTO!${RESET}"
 }
 
 submenu_reset() {
     clear
     printf '\033c'
-    echo -e "${CIANO}Restaurando todas as configurações padrão...${RESET}"
+    echo -e "${CYAN}Restaurando todas as configurações padrão...${RESET}"
 
     # RESTAURAR VALORES PADRÃO
     settings put global restricted_device_performance '1,1'
@@ -1428,12 +1335,14 @@ submenu_reset() {
     settings delete system peak_refresh_rate
     settings delete system min_refresh_rate
     settings delete global display_dual_output
+    # REMOVIDO: settings delete global gamepad.latencia_reduction
 
     setprop vendor.usb.raw_input.enable 1
     setprop persist.usb.low_latency_mode 0
     setprop vendor.usb.hid.priority 1
     setprop persist.vendor.usb.high_speed 0
     setprop persist.vendor.usb.power 0
+    # REMOVIDO: setprop vendor.usb.hub.boost 0
     setprop vendor.usb.mouse.jitter_filter 1
 
     setprop persist.sys.mouse.linear_response 0
@@ -1442,10 +1351,12 @@ submenu_reset() {
     setprop persist.sys.input.low_latency_mode 0
     setprop persist.sys.input.high_update_rate false
 
+    setprop debug.hwui.disable_vsync 1
     setprop persist.sys.gpu.low_latency 0
     setprop persist.sys.gpu.frame_boost 0
 
     setprop vendor.display.external_priority 0
+    # REMOVIDO: setprop persist.video.duplicate.display 0
 
     setprop vendor.hid.input.fastpath 0
     setprop persist.sys.input.filter 1
@@ -1455,6 +1366,7 @@ submenu_reset() {
     
     setprop debug.input.low_latency 1
     
+    # ALTERADO: windowsmgr.max_events_per_sec 120
     setprop windowsmgr.max_events_per_sec 120
     
     setprop debug.sf.late.sf.duration 0
@@ -1464,92 +1376,100 @@ submenu_reset() {
     setprop debug.sf.high_fps_late.sf.duration 0
     
     setprop debug.hwui.skip_vsync 0
-    setprop debug.hwui.render_dirty_regions true
     setprop persist.sys.input.urgent 0
     
     setprop debug.sf.latch_unsignaled 0
     setprop persist.sys.cpu.boost 0
-    setprop persist.video.low_latency_path 0
     
     settings put global window_animation_scale 1
     settings put global transition_animation_scale 1
     settings put global animator_duration_scale 1
 
+    # Novas propriedades
     setprop persist.sys.input.priority 0
+    setprop persist.video.low_latency_path 0
+
+    # Novas propriedades adicionadas (remover ao resetar)
+    setprop debug.sf.disable_backpressure 0
+    setprop debug.sf.latch_unsignaled 0
+    setprop persist.sys.display.primary_external 0
     setprop persist.sys.input.absolute_mode 0
     setprop persist.sys.input.relative_mode 1
-
-    setprop debug.sf.disable_backpressure 0
-    setprop persist.sys.display.primary_external 0
+    settings delete global enhanced_processing
 
     # Limpar arquivos de controle
-    rm -rf "$DIRETORIO_BANDEIRAS" 2>/dev/null
-    rm -f "$ARQUIVO_SPOOF" "$BANDEIRA_SPOOF" "$ARMAZENAMENTO_ORIGINAL" 2>/dev/null
-    rm -f "$MODDIR/ativar_no_boot"
-    rm -f "$ARQUIVO_TWEAKS_ATIVOS"
+    rm -rf "$FLAG_DIR" 2>/dev/null
+    rm -f "$SPOOF_FILE" "$SPOOF_FLAG" "$ORIG_STORE" 2>/dev/null
+    rm -f "$MODDIR/enable_on_boot"
+    rm -f "$ENABLED_TWEAKS_FILE"
 
-    echo -e "${VERDE}✔ Todos os valores foram resetados para padrão.${RESET}"
-    echo -e "${AMARELO}O sistema NÃO será reiniciado.${RESET}"
+    echo -e "${GREEN}✔ Todos os valores foram resetados para padrão.${RESET}"
+    echo -e "${YELLOW}O sistema NÃO será reiniciado.${RESET}"
     sleep 2
 }
 
 if [ "$1" = "--ativar-todos" ]; then
-    echo -e "${CIANO}Aplicando todos os tweaks (exceto spoof)...${RESET}"
-    
-    aplicar_se_ativado() {
-        NOME_TWEAK="$1"
-        COMANDO="$2"
-        BANDEIRA="$DIRETORIO_BANDEIRAS/$NOME_TWEAK"
-        if [ ! -f "$BANDEIRA" ]; then
-            if echo "$COMANDO" | grep -qE "^settings"; then
-                eval "$COMANDO"
-            elif echo "$COMANDO" | grep -qE "^setprop"; then
-                chave_prop=$(echo "$COMANDO" | awk '{print $2}')
-                valor_prop=$(echo "$COMANDO" | awk '{print $3}')
-                [ -n "$chave_prop" ] && setprop "$chave_prop" "$valor_prop" 2>/dev/null
-                adicionar_linha_prop "$chave_prop" "$valor_prop"
+
+    apply_if_enabled() {
+        TWEAK_NAME="$1"
+        COMMAND="$2"
+        if [ ! -f "$FLAG_DIR/$TWEAK_NAME" ]; then
+            if echo "$COMMAND" | grep -qE "^settings"; then
+                eval "$COMMAND"
+            elif echo "$COMMAND" | grep -qE "^setprop"; then
+                prop_key=$(echo "$COMMAND" | awk '{print $2}')
+                prop_value=$(echo "$COMMAND" | awk '{print $3}')
+                [ -n "$prop_key" ] && setprop "$prop_key" "$prop_value" 2>/dev/null
             fi
         fi
     }
 
-    aplicar_se_ativado "Tempo mínimo do toque" "$submenu_1_cmd_on"
-    aplicar_se_ativado "Tempo do toque longo" "$submenu_2_cmd_on"
-    aplicar_se_ativado "Toques rápidos (duplo/triplo)" "$submenu_3_cmd_on"
-    aplicar_se_ativado "Ações automáticas mais rápidas" "$submenu_4_cmd_on"
-    aplicar_se_ativado "Permitir toques no espelhamento" "$submenu_5_cmd_on"
-    aplicar_se_ativado "Desbloquear desempenho do sistema" "$submenu_6_cmd_on"
-    aplicar_se_ativado "Tela interna 120Hz (fixo)" "$submenu_23_cmd_on"
+    apply_if_enabled "tap_duration_threshold" "settings put secure tap_duration_threshold 80"
+    apply_if_enabled "long_press_timeout" "settings put secure long_press_timeout 300"
+    apply_if_enabled "multi_press_timeout" "settings put secure multi_press_timeout 130"
+    apply_if_enabled "accessibility_auto_action_delay" "settings put secure accessibility_auto_action_delay 200"
+    apply_if_enabled "block_untrusted_touches" "settings put global block_untrusted_touches 0"
+    apply_if_enabled "restricted_device_performance" "settings put global restricted_device_performance '0,0'"
+    apply_if_enabled "Refresh 120Hz Interno" "settings put system peak_refresh_rate 120; settings put system min_refresh_rate 120"
+    # REMOVIDO: Gamepad Redução de latência
 
-    echo -e "${CIANO}Garantindo persistência e aplicando Propriedades...${RESET}"
-    reconstruir_system_prop
+    echo -e "${CYAN}Garantindo persistência e aplicando Propriedades...${RESET}"
+    rebuild_system_prop
 
-    aplicar_se_ativado "USB baixa latência" "$submenu_8_cmd_on"
-    aplicar_se_ativado "Prioridade HID" "$submenu_9_cmd_on"
-    aplicar_se_ativado "Modo High Speed USB" "$submenu_10_cmd_on"
-    aplicar_se_ativado "Potência USB aprimorada" "$submenu_11_cmd_on"
-    aplicar_se_ativado "Anti-jitter USB (mouse)" "$submenu_13_cmd_on"
-    aplicar_se_ativado "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on"
-    aplicar_se_ativado "Aceleração do mouse desligada" "$submenu_15_cmd_on"
-    aplicar_se_ativado "Input: baixa latência" "$submenu_17_cmd_on"
-    aplicar_se_ativado "GPU: baixa latência" "$submenu_21_cmd_on"
-    aplicar_se_ativado "GPU: aceleração de quadros" "$submenu_22_cmd_on"
-    aplicar_se_ativado "Prioridade de vídeo externa" "$submenu_26_cmd_on"
-    aplicar_se_ativado "Interrupções USB baixa latência" "$submenu_36_cmd_on"
+    # ALTERADO: persist.vendor.usb.low_latency_interrupts 0 -> 1
+    apply_if_enabled "Interrupções USB baixa latência" "setprop persist.vendor.usb.low_latency_interrupts 1"
     
-    aplicar_se_ativado "Window Animation Scale" "$submenu_66_cmd_on"
-    aplicar_se_ativado "Transition Animation Scale" "$submenu_67_cmd_on"
-    aplicar_se_ativado "Animator Duration Scale" "$submenu_68_cmd_on"
+    # REMOVIDO: Debug Input Low Latency
+    # apply_if_enabled "Debug Input Low Latency" "setprop debug.input.low_latency 1"
     
-    aplicar_se_ativado "Input Priority" "$submenu_33_cmd_on"
-    aplicar_se_ativado "Input Filter" "$submenu_34_cmd_on"
-    aplicar_se_ativado "Max Events per Sec" "$submenu_35_cmd_on"
+    # REMOVIDO: CPU boost persistente
+    # apply_if_enabled "Persist Sys CPU Boost" "setprop persist.sys.cpu.boost 1"
     
-    aplicar_se_ativado "SF Latch Unsignaled" "$submenu_73_cmd_on"
-    aplicar_se_ativado "Display Primary External" "$submenu_74_cmd_on"
-    aplicar_se_ativado "HWUI Render Dirty Regions" "$submenu_75_cmd_on"
-    aplicar_se_ativado "Video Low Latency Path" "$submenu_76_cmd_on"
+    apply_if_enabled "Window Animation Scale" "settings put global window_animation_scale 0"
+    apply_if_enabled "Transition Animation Scale" "settings put global transition_animation_scale 0"
+    apply_if_enabled "Animator Duration Scale" "settings put global animator_duration_scale 0"
+    
+    # REMOVIDO: Input High Update Rate
+    # apply_if_enabled "Input High Update Rate" "setprop persist.sys.input.high_update_rate true"
 
-    echo -e "${VERDE}✔ Todos os tweaks aplicados (spoof NÃO foi ativado).${RESET}"
+    # Novas propriedades
+    apply_if_enabled "Input Resample" "setprop persist.sys.input.resample 0"
+    apply_if_enabled "Input Priority" "setprop persist.sys.input.priority 1"
+    apply_if_enabled "Input Filter" "setprop persist.sys.input.filter 0"
+    # ALTERADO: Max Events per Sec 120
+    apply_if_enabled "Max Events per Sec" "setprop windowsmgr.max_events_per_sec 120"
+    # REMOVIDO: Video Low Latency Path
+    # apply_if_enabled "Video Low Latency Path" "setprop persist.video.low_latency_path 1"
+    
+    # NOVAS PROPRIEDADES ADICIONADAS
+    apply_if_enabled "Enhanced Processing" "settings put global enhanced_processing 1"
+    apply_if_enabled "Input Absolute Mode" "setprop persist.sys.input.absolute_mode 1"
+    apply_if_enabled "Input Relative Mode" "setprop persist.sys.input.relative_mode 0"
+    apply_if_enabled "SF Disable Backpressure" "setprop debug.sf.disable_backpressure 1"
+    apply_if_enabled "SF Latch Unsignaled" "setprop debug.sf.latch_unsignaled 1"
+    apply_if_enabled "Display Primary External" "setprop persist.sys.display.primary_external 1"
+
+    echo -e "${GREEN}✔ Todos os tweaks aplicados (spoof NÃO foi ativado).${RESET}"
     exit 0
 fi
 
@@ -1559,14 +1479,9 @@ if [ "$1" = "--boot" ]; then
         exit 1
     fi
     
-    # Aplicar prioridade se estiver ativa
-    if [ -f "$ARQUIVO_PRIORIDADE_ATIVA" ]; then
-        aplicar_prioridade_ggmouse_ff
-    fi
-    
-    aplicar_tweaks_ativos_arquivo
-    if [ -f "$BANDEIRA_SPOOF" ]; then
-        ativar_spoof
+    apply_enabled_tweaks_from_file
+    if [ -f "$SPOOF_FLAG" ]; then
+        enable_spoof
     fi
     exit 0
 fi
@@ -1579,121 +1494,159 @@ menu_todos_tweaks() {
     while true; do
         clear
         printf '\033c'
-        echo -e "${NEGRITO}${CIANO}🔥 COMANDOS INDIVIDUAIS${RESET}"
-        echo -e "${NEGRITO}${CIANO}────────────────────────────────────${RESET}"
-        echo -e "${VERDE}🟢 ATIVO     ${VERMELHO}🔴 DESATIVADO${RESET}\n"
+        echo -e "${BOLD}${CYAN}🔥 COMANDOS INDIVIDUAIS${RESET}"
+        echo -e "${BOLD}${CYAN}────────────────────────────────────${RESET}"
+        echo -e "${GREEN}🟢 ATIVO     ${RED}🔴 DESATIVADO${RESET}\n"
 
-        printf " %b [01] ⏱ Tempo mínimo do toque\n" "$(icone verificar_configuracao secure tap_duration_threshold 60)"
-        printf " %b [02] ⌛ Tempo do toque longo\n" "$(icone verificar_configuracao secure long_press_timeout 300)"
-        printf " %b [03] ⚡ Toques rápidos (duplo / triplo)\n" "$(icone verificar_configuracao secure multi_press_timeout 110)"
-        printf " %b [04] 🤖 Ações automáticas mais rápidas\n" "$(icone verificar_configuracao secure accessibility_auto_action_delay 200)"
-        printf " %b [05] 🖥 Toque no espelhamento\n" "$(icone verificar_configuracao global block_untrusted_touches 0)"
-        printf " %b [06] 🚀 Desempenho do sistema\n" "$(icone verificar_configuracao global restricted_device_performance '0,0')"
+        printf " %b [01] ⏱ Tempo mínimo do toque\n" "$(icon check_setting secure tap_duration_threshold 80)"
+        printf " %b [02] ⌛ Tempo do toque longo\n" "$(icon check_setting secure long_press_timeout 300)"
+        printf " %b [03] ⚡ Toques rápidos (duplo / triplo)\n" "$(icon check_setting secure multi_press_timeout 130)"
+        printf " %b [04] 🤖 Ações automáticas mais rápidas\n" "$(icon check_setting secure accessibility_auto_action_delay 200)"
+        printf " %b [05] 🖥 Toque no espelhamento\n" "$(icon check_setting global block_untrusted_touches 0)"
+        printf " %b [06] 🚀 Desempenho do sistema\n" "$(icon check_setting global restricted_device_performance '0,0')"
         echo ""
 
-        printf " %b [07] ⚡ USB baixa latência\n" "$(icone verificar_prop persist.usb.low_latency_mode 1)"
-        printf " %b [08] 🎯 Prioridade HID\n" "$(icone verificar_prop vendor.usb.hid.priority 2)"
-        printf " %b [09] 🚄 USB High Speed\n" "$(icone verificar_prop persist.vendor.usb.high_speed 1)"
-        printf " %b [10] 🔋 Potência USB\n" "$(icone verificar_prop persist.vendor.usb.power 1)"
-        printf " %b [11] 🖱 Anti-jitter mouse\n" "$(icone verificar_prop vendor.usb.mouse.jitter_filter 0)"
+        printf " %b [07] 🔌 USB RAW (sem filtro)\n" "$(icon check_prop vendor.usb.raw_input.enable 1)"
+        printf " %b [08] ⚡ USB baixa latência\n" "$(icon check_prop persist.usb.low_latency_mode 1)"
+        printf " %b [09] 🎯 Prioridade HID\n" "$(icon check_prop vendor.usb.hid.priority 2)"
+        printf " %b [10] 🚄 USB High Speed\n" "$(icon check_prop persist.vendor.usb.high_speed 1)"
+        printf " %b [11] 🔋 Potência USB\n" "$(icon check_prop persist.vendor.usb.power 1)"
+        printf " %b [12] 🖱 Anti-jitter mouse\n" "$(icon check_prop vendor.usb.mouse.jitter_filter 0)"
         echo ""
 
-        printf " %b [12] 🎯 Mouse linear (1:1)\n" "$(icone verificar_prop persist.sys.mouse.linear_response 1)"
-        printf " %b [13] 🚫 Mouse sem aceleração\n" "$(verificar_aceleracao_mouse)"
-        printf " %b [14] ⚡ Input baixa latência\n" "$(icone verificar_prop persist.sys.input.low_latency_mode 1)"
+        printf " %b [13] 🎯 Mouse linear (1:1)\n" "$(icon check_prop persist.sys.mouse.linear_response 1)"
+        printf " %b [14] 🚫 Mouse sem aceleração\n" "$(check_mouse_acceleration)"
+        printf " %b [15] ⚡ Input baixa latência\n" "$(icon check_prop persist.sys.input.low_latency_mode 1)"
+        # REMOVIDO: Input High Update Rate
+        # printf " %b [16] 🚀 Input High Update Rate\n" "$(check_input_high_update_rate)"
         echo ""
 
-        printf " %b [15] 🎮 GPU baixa latência\n" "$(icone verificar_prop persist.sys.gpu.low_latency 1)"
-        printf " %b [16] 🧩 GPU aceleração quadros\n" "$(icone verificar_prop persist.sys.gpu.frame_boost 1)"
+        # REMOVIDO: VSync desligado
+        # printf " %b [17] 🚫 VSync desligado\n" "$(icon check_prop debug.hwui.disable_vsync 0)"
+        printf " %b [16] 🎮 GPU baixa latência\n" "$(icon check_prop persist.sys.gpu.low_latency 1)"
+        printf " %b [17] 🧩 GPU aceleração quadros\n" "$(icon check_prop persist.sys.gpu.frame_boost 1)"
         echo ""
 
-        printf " %b [17] 📱 Tela 120Hz fixo\n" "$(icone verificar_configuracao system peak_refresh_rate 120)"
-        printf " %b [18] 📺 Prioridade vídeo externa\n" "$(verificar_prioridade_video_externo)"
+        printf " %b [18] 📱 Tela 120Hz fixo\n" "$(icon check_setting system peak_refresh_rate 120)"
+        printf " %b [19] 📺 Prioridade vídeo externa\n" "$(icon check_prop vendor.display.external_priority 1)"
         echo ""
 
-        printf " %b [19] ⏱ IRQ USB baixa latência\n" "$(icone verificar_prop persist.vendor.usb.low_latency_interrupts 1)"
+        printf " %b [20] 🛣 Fastpath HID\n" "$(icon check_prop vendor.hid.input.fastpath 1)"
+        printf " %b [21] ⏱ IRQ USB baixa latência\n" "$(icon check_prop persist.vendor.usb.low_latency_interrupts 1)"
+        # REMOVIDO: Despacho rápido input
+        # printf " %b [24] 🚀 Despacho rápido input\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
         echo ""
 
-        printf " %b [20] 🪟 Window Animation Scale\n" "$(icone verificar_configuracao global window_animation_scale 0)"
-        printf " %b [21] 🔄 Transition Animation Scale\n" "$(icone verificar_configuracao global transition_animation_scale 0)"
-        printf " %b [22] ⏱️ Animator Duration Scale\n" "$(icone verificar_configuracao global animator_duration_scale 0)"
-        printf " %b [23] 🎯 Input Priority\n" "$(icone verificar_prop persist.sys.input.priority 1)"
-        printf " %b [24] 🚫 Input Filter\n" "$(icone verificar_prop persist.sys.input.filter 0)"
-        printf " %b [25] 🪟 Max Events per Sec\n" "$(icone verificar_prop windowsmgr.max_events_per_sec 240)"
+        # REMOVIDO: Debug input low latency
+        # printf " %b [25] 🐞 Debug input low latency\n" "$(icon check_prop debug.input.low_latency 1)"
+        # echo ""
+
+        # REMOVIDO: CPU boost persistente
+        # printf " %b [26] 🚀 CPU boost persistente\n" "$(icon check_prop persist.sys.cpu.boost 1)"
+        printf " %b [22] 🪟 Window Animation Scale\n" "$(icon check_setting global window_animation_scale 0)"
+        printf " %b [23] 🔄 Transition Animation Scale\n" "$(icon check_setting global transition_animation_scale 0)"
+        printf " %b [24] ⏱️ Animator Duration Scale\n" "$(icon check_setting global animator_duration_scale 0)"
+        printf " %b [25] 🔄 Input Resample\n" "$(icon check_prop persist.sys.input.resample 0)"
+        printf " %b [26] 🎯 Input Priority\n" "$(icon check_prop persist.sys.input.priority 1)"
+        printf " %b [27] 🚫 Input Filter\n" "$(icon check_prop persist.sys.input.filter 0)"
+        printf " %b [28] 🪟 Max Events per Sec\n" "$(icon check_prop windowsmgr.max_events_per_sec 120)"
+        # REMOVIDO: Video Low Latency Path
+        # printf " %b [34] 🎥 Video Low Latency Path\n" "$(icon check_prop persist.video.low_latency_path 1)"
         
-        printf " %b [26] 🔒 SF Latch Unsignaled\n" "$(icone verificar_prop debug.sf.latch_unsignaled 0)"
-        printf " %b [27] 🖥 Display Primary External\n" "$(icone verificar_prop persist.sys.display.primary_external 1)"
-        printf " %b [28] 🎨 HWUI Render Dirty Regions\n" "$(icone verificar_prop debug.hwui.render_dirty_regions false)"
-        printf " %b [29] 🎬 Video Low Latency Path\n" "$(icone verificar_prop persist.video.low_latency_path 1)"
+        # NOVAS PROPRIEDADES
+        printf " %b [29] ⚡ Enhanced Processing\n" "$(icon check_setting global enhanced_processing 1)"
+        printf " %b [30] 🎯 Input Absolute Mode\n" "$(icon check_prop persist.sys.input.absolute_mode 1)"
+        printf " %b [31] 🔄 Input Relative Mode\n" "$(icon check_prop persist.sys.input.relative_mode 0)"
+        printf " %b [32] 🚫 SF Disable Backpressure\n" "$(icon check_prop debug.sf.disable_backpressure 1)"
+        printf " %b [33] 🔒 SF Latch Unsignaled\n" "$(icon check_prop debug.sf.latch_unsignaled 1)"
+        printf " %b [34] 🖥 Display Primary External\n" "$(icon check_prop persist.sys.display.primary_external 1)"
         
-        echo -e "\n${NEGRITO}${CIANO}────────────────────────────────────${RESET}"
+        echo -e "\n${BOLD}${CYAN}────────────────────────────────────${RESET}"
         
-        if status_spoof; then
-            ICON_SPOOF="${VERDE}🟢${RESET}"
+        if spoof_status; then
+            SPOOF_ICON="${GREEN}🟢${RESET}"
         else
-            ICON_SPOOF="${VERMELHO}🔴${RESET}"
+            SPOOF_ICON="${RED}🔴${RESET}"
         fi
-        printf " %b [30] 🎯 Spoof 120 FPS\n" "$ICON_SPOOF"
-        printf " ${VERMELHO}🔴${RESET} [31] ♻️  Reset total\n"
+        printf " %b [35] 🎯 Spoof 120 FPS\n" "$SPOOF_ICON"
+        printf " ${RED}🔴${RESET} [36] ♻️  Reset total\n"
         
-        echo -e "\n${NEGRITO}${CIANO}[0] ⬅️ Voltar${RESET}"
+        echo -e "\n${BOLD}${CYAN}[0] ⬅️ Voltar${RESET}"
         echo ""
-        ler_prompt "➤ Selecione uma opção: " item
+        read_prompt "➤ Selecione uma opção: " item
 
         case "$item" in
-            01) alternar_tweak "Tempo mínimo do toque" "$submenu_1_cmd_on" "$submenu_1_cmd_off" ;;
-            02) alternar_tweak "Tempo do toque longo" "$submenu_2_cmd_on" "$submenu_2_cmd_off" ;;
-            03) alternar_tweak "Toques rápidos (duplo/triplo)" "$submenu_3_cmd_on" "$submenu_3_cmd_off" ;;
-            04) alternar_tweak "Ações automáticas mais rápidas" "$submenu_4_cmd_on" "$submenu_4_cmd_off" ;;
-            05) alternar_tweak "Permitir toques no espelhamento" "$submenu_5_cmd_on" "$submenu_5_cmd_off" ;;
-            06) alternar_tweak "Desbloquear desempenho do sistema" "$submenu_6_cmd_on" "$submenu_6_cmd_off" ;;
-            07) alternar_tweak "USB baixa latência" "$submenu_8_cmd_on" "$submenu_8_cmd_off" ;;
-            08) alternar_tweak "Prioridade HID" "$submenu_9_cmd_on" "$submenu_9_cmd_off" ;;
-            09) alternar_tweak "Modo High Speed USB" "$submenu_10_cmd_on" "$submenu_10_cmd_off" ;;
-            10) alternar_tweak "Potência USB aprimorada" "$submenu_11_cmd_on" "$submenu_11_cmd_off" ;;
-            11) alternar_tweak "Anti-jitter USB (mouse)" "$submenu_13_cmd_on" "$submenu_13_cmd_off" ;;
-            12) alternar_tweak "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on" "$submenu_14_cmd_off" ;;
-            13) alternar_tweak "Aceleração do mouse desligada" "$submenu_15_cmd_on" "$submenu_15_cmd_off" ;;
-            14) alternar_tweak "Input: baixa latência" "$submenu_17_cmd_on" "$submenu_17_cmd_off" ;;
-            15) alternar_tweak "GPU: baixa latência" "$submenu_21_cmd_on" "$submenu_21_cmd_off" ;;
-            16) alternar_tweak "GPU: aceleração de quadros" "$submenu_22_cmd_on" "$submenu_22_cmd_off" ;;
-            17) alternar_tweak "Tela interna 120Hz (fixo)" "$submenu_23_cmd_on" "$submenu_23_cmd_off" ;;
-            18) alternar_tweak "Prioridade de vídeo externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
-            19) alternar_tweak "Interrupções USB baixa latência" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
-            20) alternar_tweak "Window Animation Scale" "$submenu_66_cmd_on" "$submenu_66_cmd_off" ;;
-            21) alternar_tweak "Transition Animation Scale" "$submenu_67_cmd_on" "$submenu_67_cmd_off" ;;
-            22) alternar_tweak "Animator Duration Scale" "$submenu_68_cmd_on" "$submenu_68_cmd_off" ;;
-            23) alternar_tweak "Input Priority" "$submenu_33_cmd_on" "$submenu_33_cmd_off" ;;
-            24) alternar_tweak "Input Filter" "$submenu_34_cmd_on" "$submenu_34_cmd_off" ;;
-            25) alternar_tweak "Max Events per Sec" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
-            26) alternar_tweak "SF Latch Unsignaled" "$submenu_73_cmd_on" "$submenu_73_cmd_off" ;;
-            27) alternar_tweak "Display Primary External" "$submenu_74_cmd_on" "$submenu_74_cmd_off" ;;
-            28) alternar_tweak "HWUI Render Dirty Regions" "$submenu_75_cmd_on" "$submenu_75_cmd_off" ;;
-            29) alternar_tweak "Video Low Latency Path" "$submenu_76_cmd_on" "$submenu_76_cmd_off" ;;
-            30) submenu_spoof ;;
-            31) submenu_reset ;;
+            01) toggle_tweak "Tempo mínimo do toque" "$submenu_1_cmd_on" "$submenu_1_cmd_off" ;;
+            02) toggle_tweak "Tempo do toque longo" "$submenu_2_cmd_on" "$submenu_2_cmd_off" ;;
+            03) toggle_tweak "Toques rápidos (duplo/triplo)" "$submenu_3_cmd_on" "$submenu_3_cmd_off" ;;
+            04) toggle_tweak "Ações automáticas mais rápidas" "$submenu_4_cmd_on" "$submenu_4_cmd_off" ;;
+            05) toggle_tweak "Permitir toques no espelhamento" "$submenu_5_cmd_on" "$submenu_5_cmd_off" ;;
+            06) toggle_tweak "Desbloquear desempenho do sistema" "$submenu_6_cmd_on" "$submenu_6_cmd_off" ;;
+            07) toggle_tweak "Entrada USB sem filtro (RAW)" "$submenu_7_cmd_on" "$submenu_7_cmd_off" ;;
+            08) toggle_tweak "USB baixa latência" "$submenu_8_cmd_on" "$submenu_8_cmd_off" ;;
+            09) toggle_tweak "Prioridade HID" "$submenu_9_cmd_on" "$submenu_9_cmd_off" ;;
+            10) toggle_tweak "Modo High Speed USB" "$submenu_10_cmd_on" "$submenu_10_cmd_off" ;;
+            11) toggle_tweak "Potência USB aprimorada" "$submenu_11_cmd_on" "$submenu_11_cmd_off" ;;
+            12) toggle_tweak "Anti-jitter USB (mouse)" "$submenu_13_cmd_on" "$submenu_13_cmd_off" ;;
+            13) toggle_tweak "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on" "$submenu_14_cmd_off" ;;
+            14) toggle_tweak "Aceleração do mouse desligada" "$submenu_15_cmd_on" "$submenu_15_cmd_off" ;;
+            15) toggle_tweak "Input: baixa latência" "$submenu_17_cmd_on" "$submenu_17_cmd_off" ;;
+            # REMOVIDO: Input High Update Rate
+            # 16) toggle_tweak "Input High Update Rate" "$submenu_18_cmd_on" "$submenu_18_cmd_off" ;;
+            # REMOVIDO: VSync desligado
+            # 17) toggle_tweak "VSync desligado" "$submenu_20_cmd_on" "$submenu_20_cmd_off" ;;
+            16) toggle_tweak "GPU: baixa latência" "$submenu_21_cmd_on" "$submenu_21_cmd_off" ;;
+            17) toggle_tweak "GPU: aceleração de quadros" "$submenu_22_cmd_on" "$submenu_22_cmd_off" ;;
+            18) toggle_tweak "Tela interna 120Hz (fixo)" "$submenu_23_cmd_on" "$submenu_23_cmd_off" ;;
+            19) toggle_tweak "Prioridade de vídeo externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
+            20) toggle_tweak "Fastpath HID (rota direta)" "$submenu_31_cmd_on" "$submenu_31_cmd_off" ;;
+            21) toggle_tweak "Interrupções USB baixa latência" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
+            # REMOVIDO: Despacho rápido de input
+            # 24) toggle_tweak "Despacho rápido de input" "$submenu_38_cmd_on" "$submenu_38_cmd_off" ;;
+            # REMOVIDO: Debug Input Low Latency
+            # 25) toggle_tweak "Debug Input Low Latency" "$submenu_57_cmd_on" "$submenu_57_cmd_off" ;;
+            # REMOVIDO: CPU boost persistente
+            # 26) toggle_tweak "Persist Sys CPU Boost" "$submenu_65_cmd_on" "$submenu_65_cmd_off" ;;
+            22) toggle_tweak "Window Animation Scale" "$submenu_66_cmd_on" "$submenu_66_cmd_off" ;;
+            23) toggle_tweak "Transition Animation Scale" "$submenu_67_cmd_on" "$submenu_67_cmd_off" ;;
+            24) toggle_tweak "Animator Duration Scale" "$submenu_68_cmd_on" "$submenu_68_cmd_off" ;;
+            25) toggle_tweak "Input Resample" "$submenu_32_cmd_on" "$submenu_32_cmd_off" ;;
+            26) toggle_tweak "Input Priority" "$submenu_33_cmd_on" "$submenu_33_cmd_off" ;;
+            27) toggle_tweak "Input Filter" "$submenu_34_cmd_on" "$submenu_34_cmd_off" ;;
+            28) toggle_tweak "Max Events per Sec" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
+            # REMOVIDO: Video Low Latency Path
+            # 34) toggle_tweak "Video Low Latency Path" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
+            # NOVOS:
+            29) toggle_tweak "Enhanced Processing" "$submenu_69_cmd_on" "$submenu_69_cmd_off" ;;
+            30) toggle_tweak "Input Absolute Mode" "$submenu_70_cmd_on" "$submenu_70_cmd_off" ;;
+            31) toggle_tweak "Input Relative Mode" "$submenu_71_cmd_on" "$submenu_71_cmd_off" ;;
+            32) toggle_tweak "SF Disable Backpressure" "$submenu_72_cmd_on" "$submenu_72_cmd_off" ;;
+            33) toggle_tweak "SF Latch Unsignaled" "$submenu_73_cmd_on" "$submenu_73_cmd_off" ;;
+            34) toggle_tweak "Display Primary External" "$submenu_74_cmd_on" "$submenu_74_cmd_off" ;;
+            35) submenu_spoof ;;
+            36) submenu_reset ;;
             0) return ;;
-            *) echo -e "${VERMELHO}Opção inválida...${RESET}"; sleep 1 ;;
+            *) echo -e "${RED}Opção inválida...${RESET}"; sleep 1 ;;
         esac
     done
 }
 
-###############################################################################
-# 🖥️ CONFIGURADOR SIMPLIFICADO DE RESOLUÇÃO
-###############################################################################
+# =====================================================
+# 📐 CONFIGURADOR SIMPLIFICADO DE RESOLUÇÃO
+# =====================================================
 
 config_resolucao_dpi() {
     while true; do
         clear
         printf '\033c'
-        echo -e "${NEGRITO}${CIANO}=== CONFIGURADOR DE RESOLUÇÃO ===${RESET}\n"
+        echo -e "${BOLD}${CYAN}=== CONFIGURADOR DE RESOLUÇÃO ===${RESET}\n"
         
-        RESOLUCAO_ATUAL=$(wm size 2>/dev/null | grep -oE "[0-9]+x[0-9]+" || echo "Desconhecido")
-        DPI_ATUAL=$(wm density 2>/dev/null | grep -oE "[0-9]+" || echo "Desconhecido")
+        CURRENT_RES=$(wm size 2>/dev/null | grep -oE "[0-9]+x[0-9]+" || echo "Desconhecido")
+        CURRENT_DPI=$(wm density 2>/dev/null | grep -oE "[0-9]+" || echo "Desconhecido")
         
-        echo -e "${AMARELO}⚙️  Configurações atuais:${RESET}"
-        echo -e "📱 Resolução: ${VERDE}${RESOLUCAO_ATUAL}${RESET}"
-        echo -e "🎯 DPI: ${VERDE}${DPI_ATUAL}${RESET}"
+        echo -e "${YELLOW}⚙️  Configurações atuais:${RESET}"
+        echo -e "📱 Resolução: ${GREEN}${CURRENT_RES}${RESET}"
+        echo -e "🎯 DPI: ${GREEN}${CURRENT_DPI}${RESET}"
         echo ""
         
         echo "📋 OPÇÕES DE RESOLUÇÃO:"
@@ -1702,338 +1655,3 @@ config_resolucao_dpi() {
         echo "2) 1440x2560 - DPI: 400"
         echo "3) Personalizado (digitar resolução e DPI)"
         echo ""
-        echo "4) Restaurar configuração padrão"
-        echo ""
-        echo "0) Voltar"
-        echo ""
-        
-        ler_prompt "> " opcao_res
-        
-        case "$opcao_res" in
-            1) nova_res="1080x1920"; nova_dpi="400" ;;
-            2) nova_res="1440x2560"; nova_dpi="400" ;;
-            3) 
-                while true; do
-                    ler_prompt "Digite a resolução (ex: 720x1280): " nova_res
-                    if echo "$nova_res" | grep -Eq '^[0-9]+x[0-9]+$'; then
-                        break
-                    else
-                        echo -e "${VERMELHO}❌ Formato inválido! Use LarguraxAltura (ex: 720x1280)${RESET}"
-                    fi
-                done
-                
-                while true; do
-                    ler_prompt "Digite o DPI (ex: 320): " nova_dpi
-                    if echo "$nova_dpi" | grep -Eq '^[0-9]+$'; then
-                        break
-                    else
-                        echo -e "${VERMELHO}❌ DPI inválido! Use apenas números${RESET}"
-                    fi
-                done
-                ;;
-            4) 
-                restaurar_padrao_resolucao
-                pressionar_enter
-                continue
-                ;;
-            0) return ;;
-            *)
-                echo -e "${VERMELHO}Opção inválida!${RESET}"
-                sleep 1
-                continue
-                ;;
-        esac
-        
-        aplicar_resolucao_dpi "$nova_res" "$nova_dpi"
-        pressionar_enter
-    done
-}
-
-restaurar_padrao_resolucao() {
-    echo -e "${CIANO}Restaurando configuração padrão do dispositivo...${RESET}"
-    
-    wm size reset
-    wm density reset
-    
-    rm -f "$MODDIR/config_resolucao" 2>/dev/null
-    
-    echo -e "${VERDE}✅ Configuração padrão restaurada!${RESET}"
-    echo -e "${AMARELO}Alguns apps podem precisar ser reiniciados.${RESET}"
-    
-    sleep 2
-}
-
-aplicar_resolucao_dpi() {
-    nova_res="$1"
-    nova_dpi="$2"
-    
-    clear
-    printf '\033c'
-    echo -e "${NEGRITO}${CIANO}=== APLICANDO CONFIGURAÇÃO ===${RESET}\n"
-    
-    echo -e "📱 ${VERDE}Nova Resolução: ${nova_res}${RESET}"
-    echo -e "🎯 ${VERDE}Novo DPI: ${nova_dpi}${RESET}"
-    
-    echo -e "\n${AMARELO}Aplicando configuração...${RESET}"
-    wm size "${nova_res}"
-    wm density "${nova_dpi}"
-    
-    RES_APLICADA=$(wm size 2>/dev/null | grep -oE "[0-9]+x[0-9]+" || echo "")
-    DPI_APLICADO=$(wm density 2>/dev/null | grep -oE "[0-9]+" || echo "")
-    
-    if [ "$RES_APLICADA" = "$nova_res" ] && [ "$DPI_APLICADO" = "$nova_dpi" ]; then
-        echo -e "${VERDE}✅ Configuração aplicada com sucesso!${RESET}"
-        
-        ARQUIVO_CONFIG_RES="$MODDIR/config_resolucao"
-        echo "${nova_res}|${nova_dpi}" > "$ARQUIVO_CONFIG_RES"
-        
-        ARQUIVO_BOOT="$MODDIR/ativar_no_boot"
-        if [ -f "$ARQUIVO_BOOT" ]; then
-            if ! grep -q "aplicar_resolucao_no_boot" "$ARQUIVO_BOOT"; then
-                echo "aplicar_resolucao_no_boot" >> "$ARQUIVO_BOOT"
-            fi
-        fi
-        
-    else
-        echo -e "${VERMELHO}❌ Erro ao aplicar configuração${RESET}"
-        echo -e "${AMARELO}Aplicado: ${RES_APLICADA} (DPI: ${DPI_APLICADO})${RESET}"
-    fi
-}
-
-aplicar_resolucao_no_boot() {
-    if [ -f "$MODDIR/config_resolucao" ]; then
-        config=$(cat "$MODDIR/config_resolucao")
-        nova_res=$(echo "$config" | cut -d'|' -f1)
-        nova_dpi=$(echo "$config" | cut -d'|' -f2)
-        
-        if [ -n "$nova_res" ] && [ -n "$nova_dpi" ]; then
-            sleep 3
-            wm size "${nova_res}" 2>/dev/null
-            wm density "${nova_dpi}" 2>/dev/null
-        fi
-    fi
-}
-
-###############################################################################
-# MENU PRINCIPAL SEGURO
-###############################################################################
-menu() {
-    if ! verificar_integridade_licenca; then
-        echo -e "${VERMELHO}⛔ ACESSO NEGADO: Licença inválida ou expirada${RESET}"
-        echo -e "${AMARELO}Execute o script novamente para autenticar.${RESET}"
-        sleep 3
-        return 1
-    fi
-    
-    if ! verificar_sessao; then
-        echo -e "${AMARELO}⚠️  Sessão expirada. Faça login novamente.${RESET}"
-        sleep 2
-        rm -f "$ARQUIVO_SESSAO"
-        return 1
-    fi
-    
-    while true; do
-        clear
-        printf '\033c'
-        
-        if ! verificar_integridade_licenca; then
-            echo -e "${VERMELHO}⛔ ACESSO NEGADO: Licença inválida ou expirada${RESET}"
-            echo -e "${AMARELO}Execute o script novamente para autenticar.${RESET}"
-            sleep 3
-            return 1
-        fi
-
-        verificar_aviso_licenca
-
-        echo -e "\033[1;37m🔥 FERA ALPHA • ULTRA GAMER"
-        echo -e "\033[1;37m────────────────────────────"
-        
-        if [ -f "$ARQUIVO_LICENCA" ]; then
-            EXP=$(cat "$ARQUIVO_LICENCA" 2>/dev/null)
-            AGORA=$(date +%s)
-            if echo "$EXP" | grep -qE '^[0-9]+$'; then
-                DIFERENCA=$((EXP - AGORA))
-                DIAS=$((DIFERENCA / 86400))
-                
-                if [ "$DIAS" -gt 365 ]; then
-                    TEXTO_STATUS="Status: \033[1;37m🟢 Ativo | VIP ILIMITADO\033[0m"
-                elif [ "$DIAS" -gt 0 ]; then
-                    if [ "$DIAS" -lt 10 ]; then
-                        TEXTO_STATUS="Status: \033[1;31m🟢 Ativo | ⏳ $DIAS dias\033[0m"
-                    else
-                        TEXTO_STATUS="Status: \033[1;37m🟢 Ativo | ⏳ $DIAS dias\033[0m"
-                    fi
-                else
-                    TEXTO_STATUS="Status: \033[1;31m🔴 Expirado\033[0m"
-                fi
-                echo -e "$TEXTO_STATUS"
-            else
-                echo -e "Status: \033[1;31m🔴 Inválido\033[0m"
-            fi
-        else
-            echo -e "Status: \033[1;31m🔴 Não ativo\033[0m"
-        fi
-        
-        echo -e "\033[1;37m────────────────────────────\033[0m"
-        echo ""
-        
-        echo -e "\033[1;37m⚡ AÇÃO RÁPIDA\033[0m"
-        echo -e "\033[1;37m[01] ⚡ Aplicar tudo\033[0m"
-        echo -e "\033[1;37m[02] 🎛 Comandos individuais\033[0m"
-        
-        # Mostrar status da prioridade GG Mouse + FF
-        if verificar_prioridade_ativa; then
-            echo -e "\033[1;37m[03] ${VERDE}🟢${RESET} Prioridade GG Mouse + FF\033[0m"
-        else
-            echo -e "\033[1;37m[03] ${VERMELHO}🔴${RESET} Prioridade GG Mouse + FF\033[0m"
-        fi
-        
-        echo ""
-        
-        echo -e "\033[1;37m🚀 DESEMPENHO\033[0m"
-        echo -e "\033[1;37m[04] 🚀 Performance Máxima\033[0m"
-        echo -e "\033[1;37m[05] 🔥 Extremo (sem limites)\033[0m"
-        echo ""
-        
-        echo -e "\033[1;37m🎮 JOGOS\033[0m"
-        echo -e "\033[1;37m[06] 🎯 Apps GG Mouse + FF\033[0m"
-        echo -e "\033[1;37m[07] 🎯 Spoof 120 FPS\033[0m"
-        echo -e "\033[1;37m[08] 🖥 Resolução / DPI\033[0m"
-        echo ""
-        
-        echo -e "\033[1;37m🧠 SISTEMA\033[0m"
-        echo -e "\033[1;37m[09] 📊 Status do sistema\033[0m"
-        echo -e "\033[1;37m[10] ⚙ Atualização\033[0m"
-        echo -e "\033[1;37m[11] 🧹 Limpar cache\033[0m"
-        echo ""
-        
-        echo -e "\033[1;37m🔄 MANUTENÇÃO\033[0m"
-        echo -e "\033[1;37m[12] 🔄 Reiniciar\033[0m"
-        echo -e "\033[1;37m[13] ♻ Reset geral\033[0m"
-        echo ""
-        
-        echo -e "\033[1;37m[00] ❌ Sair\033[0m"
-        echo -e "\033[1;37m────────────────────────────\033[0m"
-        echo ""
-        echo -n -e "\033[1;37m➤ Selecione uma opção: \033[0m"
-        read op
-
-        case "$op" in
-            01) 
-                sh "$0" --ativar-todos
-                pressionar_enter
-                ;;
-            02) 
-                menu_todos_tweaks
-                ;;
-            03) 
-                alternar_prioridade_ggmouse_ff
-                pressionar_enter
-                ;;
-            04) 
-                aplicar_performance_segura
-                pressionar_enter
-                ;;
-            05) 
-                aplicar_performance_extrema
-                pressionar_enter
-                ;;
-            06) 
-                menu_apps_prioritarios_simples
-                ;;
-            07) 
-                submenu_spoof
-                ;;
-            08) 
-                config_resolucao_dpi
-                ;;
-            09) 
-                mostrar_status_performance
-                ;;
-            10) 
-                menu_config_update
-                ;;
-            11) 
-                limpar_cache_simples
-                ;;
-            12) 
-                reiniciar_dispositivo_simples
-                ;;
-            13) 
-                submenu_reset
-                ;;
-            00) 
-                echo -e "\033[1;37m👋 Saindo...\033[0m"
-                exit 0
-                ;;
-            *) 
-                echo -e "\033[1;31mOpção inválida\033[0m"
-                sleep 1
-                ;;
-        esac
-    done
-}
-
-###############################################################################
-# FLUXO PRINCIPAL COM SEGURANÇA FORTIFICADA
-###############################################################################
-
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] INICIO: Script iniciado" > "$LOG_SEGURANCA"
-
-verificacao_inicial
-
-if [ -f "$ARQUIVO_SESSAO" ] && verificar_integridade_licenca; then
-    TEMPO_SESSAO=$(stat -c %Y "$ARQUIVO_SESSAO" 2>/dev/null || echo "0")
-    AGORA=$(date +%s)
-    
-    if [ $((AGORA - TEMPO_SESSAO)) -le 86400 ]; then
-        echo -e "${VERDE}✅ Sessão válida detectada. Acessando painel...${RESET}"
-        sleep 1
-        menu
-        exit 0
-    else
-        rm -f "$ARQUIVO_SESSAO"
-        log_seguranca "SESSAO_EXPIRADA: Removendo sessão antiga"
-    fi
-fi
-
-tentativas=0
-MAX_TENTATIVAS=3
-
-while [ $tentativas -lt $MAX_TENTATIVAS ]; do
-    barra_carregamento
-    cabecalho
-    entrada_login
-
-    echo -e "\033[1;36m⏳ Validando no servidor...\033[0m"
-    ativar_servidor "$USUARIO" "$SENHA"
-
-    if [ $? -eq 0 ]; then
-        bem_vindo
-        menu
-        break
-    fi
-
-    erro_login
-    tentativas=$((tentativas+1))
-    echo -e "\033[1;33mTentativas restantes: $((MAX_TENTATIVAS-tentativas))\033[0m"
-    
-    log_seguranca "TENTATIVA_FALHA_$tentativas: Usuário=$USUARIO"
-    
-    if [ $tentativas -ge $MAX_TENTATIVAS ]; then
-        echo -e "\033[1;31m🚫 Muitas tentativas falhas. Aguarde 60 segundos.\033[0m"
-        log_seguranca "BLOQUEIO_TEMPORARIO: Muitas tentativas falhas"
-        sleep 60
-        tentativas=0
-    else
-        sleep 2
-    fi
-done
-
-if [ $tentativas -ge $MAX_TENTATIVAS ]; then
-    echo -e "\033[1;31m❌ Falha ao autenticar. Saindo.\033[0m"
-    log_seguranca "SAIDA: Autenticação falhou após $MAX_TENTATIVAS tentativas"
-    exit 1
-fi
-
-exit 0
