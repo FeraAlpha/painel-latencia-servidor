@@ -1655,3 +1655,335 @@ config_resolucao_dpi() {
         echo "2) 1440x2560 - DPI: 400"
         echo "3) Personalizado (digitar resolução e DPI)"
         echo ""
+        echo "4) Restaurar configuração padrão"
+        echo ""
+        echo "0) Voltar"
+        echo ""
+        
+        read_prompt "> " opcao_res
+        
+        case "$opcao_res" in
+            1) nova_res="1080x1920"; nova_dpi="400" ;;
+            2) nova_res="1440x2560"; nova_dpi="400" ;;
+            3) 
+                while true; do
+                    read_prompt "Digite a resolução (ex: 720x1280): " nova_res
+                    if echo "$nova_res" | grep -Eq '^[0-9]+x[0-9]+$'; then
+                        break
+                    else
+                        echo -e "${RED}❌ Formato inválido! Use WxH (ex: 720x1280)${RESET}"
+                    fi
+                done
+                
+                while true; do
+                    read_prompt "Digite o DPI (ex: 320): " nova_dpi
+                    if echo "$nova_dpi" | grep -Eq '^[0-9]+$'; then
+                        break
+                    else
+                        echo -e "${RED}❌ DPI inválido! Use apenas números${RESET}"
+                    fi
+                done
+                ;;
+            4) 
+                restaurar_padrao_resolucao
+                press_enter
+                continue
+                ;;
+            0) return ;;
+            *)
+                echo -e "${RED}Opção inválida!${RESET}"
+                sleep 1
+                continue
+                ;;
+        esac
+        
+        aplicar_resolucao_dpi "$nova_res" "$nova_dpi"
+        press_enter
+    done
+}
+
+restaurar_padrao_resolucao() {
+    echo -e "${CYAN}Restaurando configuração padrão do dispositivo...${RESET}"
+    
+    wm size reset
+    wm density reset
+    
+    rm -f "$MODDIR/resolution_config" 2>/dev/null
+    
+    echo -e "${GREEN}✅ Configuração padrão restaurada!${RESET}"
+    echo -e "${YELLOW}Alguns apps podem precisar ser reiniciados.${RESET}"
+    
+    sleep 2
+}
+
+aplicar_resolucao_dpi() {
+    nova_res="$1"
+    nova_dpi="$2"
+    
+    clear
+    printf '\033c'
+    echo -e "${BOLD}${CYAN}=== APLICANDO CONFIGURAÇÃO ===${RESET}\n"
+    
+    echo -e "📱 ${GREEN}Nova Resolução: ${nova_res}${RESET}"
+    echo -e "🎯 ${GREEN}Novo DPI: ${nova_dpi}${RESET}"
+    
+    echo -e "\n${YELLOW}Aplicando configuração...${RESET}"
+    wm size "${nova_res}"
+    wm density "${nova_dpi}"
+    
+    APPLIED_RES=$(wm size 2>/dev/null | grep -oE "[0-9]+x[0-9]+" || echo "")
+    APPLIED_DPI=$(wm density 2>/dev/null | grep -oE "[0-9]+" || echo "")
+    
+    if [ "$APPLIED_RES" = "$nova_res" ] && [ "$APPLIED_DPI" = "$nova_dpi" ]; then
+        echo -e "${GREEN}✅ Configuração aplicada com sucesso!${RESET}"
+        
+        RES_CONFIG_FILE="$MODDIR/resolution_config"
+        echo "${nova_res}|${nova_dpi}" > "$RES_CONFIG_FILE"
+        
+        BOOT_FILE="$MODDIR/enable_on_boot"
+        if [ -f "$BOOT_FILE" ]; then
+            if ! grep -q "apply_resolution_on_boot" "$BOOT_FILE"; then
+                echo "apply_resolution_on_boot" >> "$BOOT_FILE"
+            fi
+        fi
+        
+    else
+        echo -e "${RED}❌ Erro ao aplicar configuração${RESET}"
+        echo -e "${YELLOW}Aplicado: ${APPLIED_RES} (DPI: ${APPLIED_DPI})${RESET}"
+    fi
+}
+
+apply_resolution_on_boot() {
+    if [ -f "$MODDIR/resolution_config" ]; then
+        config=$(cat "$MODDIR/resolution_config")
+        nova_res=$(echo "$config" | cut -d'|' -f1)
+        nova_dpi=$(echo "$config" | cut -d'|' -f2)
+        
+        if [ -n "$nova_res" ] && [ -n "$nova_dpi" ]; then
+            sleep 3
+            wm size "${nova_res}" 2>/dev/null
+            wm density "${nova_dpi}" 2>/dev/null
+        fi
+    fi
+}
+
+# =====================================================
+# MENU PRINCIPAL SEGURO
+# =====================================================
+menu() {
+    # 🔴 VERIFICAÇÃO FORTIFICADA - Sempre verificar licença primeiro
+    if ! verificar_integridade_licenca; then
+        echo -e "${RED}⛔ ACESSO NEGADO: Licença inválida ou expirada${RESET}"
+        echo -e "${YELLOW}Execute o script novamente para autenticar.${RESET}"
+        sleep 3
+        return 1
+    fi
+    
+    # Depois verificar sessão (agora com licença válida)
+    if ! verificar_sessao; then
+        echo -e "${YELLOW}⚠️  Sessão expirada. Faça login novamente.${RESET}"
+        sleep 2
+        
+        # Forçar novo login
+        rm -f "$SESSION_FILE"
+        return 1
+    fi
+    
+    while true; do
+        clear
+        printf '\033c'
+        
+        # 🔴 VERIFICAÇÃO FORTIFICADA A CADA LOOP
+        if ! verificar_integridade_licenca; then
+            echo -e "${RED}⛔ ACESSO NEGADO: Licença inválida ou expirada${RESET}"
+            echo -e "${YELLOW}Execute o script novamente para autenticar.${RESET}"
+            sleep 3
+            return 1
+        fi
+
+        check_license_warning
+
+        # Título
+        echo -e "\033[1;37m🔥 FERA ALPHA • ULTRA GAMER"
+        echo -e "\033[1;37m────────────────────────────"
+        
+        # Status da licença
+        if [ -f "$LICENSE_FILE" ]; then
+            EXP=$(cat "$LICENSE_FILE" 2>/dev/null)
+            NOW=$(date +%s)
+            if echo "$EXP" | grep -qE '^[0-9]+$'; then
+                DIFF=$((EXP - NOW))
+                DAYS=$((DIFF / 86400))
+                
+                if [ "$DAYS" -gt 365 ]; then
+                    STATUS_TEXT="Status: \033[1;37m🟢 Ativo | VIP ILIMITADO\033[0m"
+                elif [ "$DAYS" -gt 0 ]; then
+                    if [ "$DAYS" -lt 10 ]; then
+                        STATUS_TEXT="Status: \033[1;31m🟢 Ativo | ⏳ $DAYS dias\033[0m"
+                    else
+                        STATUS_TEXT="Status: \033[1;37m🟢 Ativo | ⏳ $DAYS dias\033[0m"
+                    fi
+                else
+                    STATUS_TEXT="Status: \033[1;31m🔴 Expirado\033[0m"
+                fi
+                echo -e "$STATUS_TEXT"
+            else
+                echo -e "Status: \033[1;31m🔴 Inválido\033[0m"
+            fi
+        else
+            echo -e "Status: \033[1;31m🔴 Não ativo\033[0m"
+        fi
+        
+        echo -e "\033[1;37m────────────────────────────\033[0m"
+        echo ""
+        
+        # Seções do menu
+        echo -e "\033[1;37m⚡ AÇÃO RÁPIDA\033[0m"
+        echo -e "\033[1;37m[01] ⚡ Aplicar tudo\033[0m"
+        echo -e "\033[1;37m[02] 🎛 Comandos individuais\033[0m"
+        echo ""
+        
+        echo -e "\033[1;37m🚀 DESEMPENHO\033[0m"
+        echo -e "\033[1;37m[03] 🚀 Performance Máxima\033[0m"
+        echo -e "\033[1;37m[04] 🔥 Extremo (sem limites)\033[0m"
+        echo ""
+        
+        echo -e "\033[1;37m🎮 JOGOS\033[0m"
+        echo -e "\033[1;37m[05] 🎯 Spoof 120 FPS\033[0m"
+        echo -e "\033[1;37m[06] 🖥 Resolução / DPI\033[0m"
+        echo ""
+        
+        echo -e "\033[1;37m🧠 SISTEMA\033[0m"
+        echo -e "\033[1;37m[07] 📊 Status do sistema\033[0m"
+        echo -e "\033[1;37m[08] ⚙ Atualização\033[0m"
+        echo -e "\033[1;37m[09] 🧹 Limpar cache\033[0m"
+        echo ""
+        
+        echo -e "\033[1;37m🔄 MANUTENÇÃO\033[0m"
+        echo -e "\033[1;37m[10] 🔄 Reiniciar\033[0m"
+        echo -e "\033[1;37m[11] ♻ Reset geral\033[0m"
+        echo ""
+        
+        echo -e "\033[1;37m[00] ❌ Sair\033[0m"
+        echo -e "\033[1;37m────────────────────────────\033[0m"
+        echo ""
+        echo -n -e "\033[1;37m➤ Selecione uma opção: \033[0m"
+        read op
+
+        case "$op" in
+            01) 
+                sh "$0" --ativar-todos
+                press_enter
+                ;;
+            02) 
+                menu_todos_tweaks
+                ;;
+            03) 
+                apply_safe_performance
+                press_enter
+                ;;
+            04) 
+                apply_extreme_performance
+                press_enter
+                ;;
+            05) 
+                submenu_spoof
+                ;;
+            06) 
+                config_resolucao_dpi
+                ;;
+            07) 
+                show_performance_status
+                ;;
+            08) 
+                menu_config_update
+                ;;
+            09) 
+                limpar_cache_simples
+                ;;
+            10) 
+                reiniciar_dispositivo_simples
+                ;;
+            11) 
+                submenu_reset
+                ;;
+            00) 
+                echo -e "\033[1;37m👋 Saindo...\033[0m"
+                exit 0
+                ;;
+            *) 
+                echo -e "\033[1;31mOpção inválida\033[0m"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+# =====================================================
+# FLUXO PRINCIPAL COM SEGURANÇA FORTIFICADA
+# =====================================================
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INICIO: Script iniciado" > "$SECURITY_LOG"
+
+verificacao_inicial
+
+# ✅ CORREÇÃO: Sempre exigir verificação completa da licença
+# A sessão só é válida se a licença estiver válida
+if [ -f "$SESSION_FILE" ] && verificar_integridade_licenca; then
+    # Verificar tempo da sessão
+    SESSION_TIME=$(stat -c %Y "$SESSION_FILE" 2>/dev/null || echo "0")
+    NOW=$(date +%s)
+    
+    if [ $((NOW - SESSION_TIME)) -le 86400 ]; then
+        echo -e "${GREEN}✅ Sessão válida detectada. Acessando painel...${RESET}"
+        sleep 1
+        menu
+        exit 0
+    else
+        # Sessão expirada, remover arquivo
+        rm -f "$SESSION_FILE"
+        log_seguranca "SESSAO_EXPIRADA: Removendo sessão antiga"
+    fi
+fi
+
+# Se chegou aqui, precisa fazer login
+tent=0
+MAX_TENT=3
+
+while [ $tent -lt $MAX_TENT ]; do
+    loading_bar
+    print_header
+    input_login
+
+    echo -e "\033[1;36m⏳ Validando no servidor...\033[0m"
+    ativar_servidor "$USER" "$PASS"
+
+    if [ $? -eq 0 ]; then
+        bem_vindo
+        menu
+        break
+    fi
+
+    erro_login
+    tent=$((tent+1))
+    echo -e "\033[1;33mTentativas restantes: $((MAX_TENT-tent))\033[0m"
+    
+    log_seguranca "TENTATIVA_FALHA_$tent: Usuário=$USER"
+    
+    if [ $tent -ge $MAX_TENT ]; then
+        echo -e "\033[1;31m🚫 Muitas tentativas falhas. Aguarde 60 segundos.\033[0m"
+        log_seguranca "BLOQUEIO_TEMPORARIO: Muitas tentativas falhas"
+        sleep 60
+        tent=0
+    else
+        sleep 2
+    fi
+done
+
+if [ $tent -ge $MAX_TENT ]; then
+    echo -e "\033[1;31m❌ Falha ao autenticar. Saindo.\033[0m"
+    log_seguranca "SAIDA: Autenticação falhou após $MAX_TENT tentativas"
+    exit 1
+fi
+
+exit 0
