@@ -1,4 +1,4 @@
-#!/system/bin/sh
+<#!/system/bin/sh
 
 ###############################################################################
 # ⚡ AUTO UPDATE - VERSÃO AUTOMÁTICA
@@ -84,8 +84,8 @@ reset_total_auto() {
     settings put secure tap_duration_threshold 100
     settings put secure long_press_timeout 500
     settings put secure multi_press_timeout 300
-    settings put secure accessibility_auto_action_delay 200
     settings put global block_untrusted_touches 1
+    settings put global input.reduce_input_lag 0
     settings delete system peak_refresh_rate
     settings delete system min_refresh_rate
     settings delete global display_dual_output
@@ -103,18 +103,16 @@ reset_total_auto() {
     setprop persist.sys.input.low_latency_mode 0
     setprop persist.sys.input.high_update_rate false
 
-    setprop persist.sys.gpu.low_latency 0
-    setprop persist.sys.gpu.frame_boost 0
-
     setprop vendor.display.external_priority 0
 
     setprop vendor.hid.input.fastpath 0
     setprop persist.sys.input.filter 1
     setprop persist.sys.input.resample 1
     setprop persist.vendor.usb.low_latency_interrupts 1
-    setprop persist.sys.input.dispatch_fast 1
+    setprop persist.sys.input.dispatch_fast 0
     
     setprop debug.input.low_latency 1
+    setprop debug.input.power_saving 1
     
     setprop windowsmgr.max_events_per_sec 120
     
@@ -635,20 +633,21 @@ append_tweaks_props() {
         "Mouse Resposta Linear=persist.sys.mouse.linear_response=1"
         "Mouse Aceleração OFF=persist.sys.pointer.acceleration=0"
         "Input Low Latency Mode=persist.sys.input.low_latency_mode=1"
-        "GPU Low Latency=persist.sys.gpu.low_latency=1"
-        "GPU Frame Boost=persist.sys.gpu.frame_boost=1"
         "USB Low Latency Interrupts=persist.vendor.usb.low_latency_interrupts=1"
         "Persist Sys CPU Boost=persist.sys.cpu.boost=0"
         "Window Animation Scale=settings:global:window_animation_scale=0"
         "Transition Animation Scale=settings:global:transition_animation_scale=0"
         "Animator Duration Scale=settings:global:animator_duration_scale=0"
         "Input Priority=persist.sys.input.priority=1"
-        "Input Filter=persist.sys.input.filter=0"
-        "Max Events per Sec=windowsmgr.max_events_per_sec=90"
+        "Max Events per Sec=windowsmgr.max_events_per_sec=240"
         "SF Latch Unsignaled=debug.sf.latch_unsignaled=0"
         "Display Primary External=persist.sys.display.primary_external=1"
         "HWUI Render Dirty Regions=debug.hwui.render_dirty_regions=false"
         "Video Low Latency Path=persist.video.low_latency_path=1"
+        "Input Reduce Input Lag=settings:global:input.reduce_input_lag=1"
+        "Input Dispatch Fast=persist.sys.input.dispatch_fast=1"
+        "Input Power Saving=debug.input.power_saving=0"
+        "Input Resample=persist.sys.input.resample=0"
     )
 
     for TWEAK in "${TWEAK_PROPS[@]}"; do
@@ -809,8 +808,6 @@ map_tweak_to_cmd() {
         "Tempo mínimo do toque") echo "$submenu_1_cmd_on" ;;
         "Tempo do toque longo") echo "$submenu_2_cmd_on" ;;
         "Toques rápidos (duplo/triplo)") echo "$submenu_3_cmd_on" ;;
-        "Ações automáticas mais rápidas") echo "$submenu_4_cmd_on" ;;
-        "Permitir toques no espelhamento") echo "$submenu_5_cmd_on" ;;
         "Desbloquear desempenho do sistema") echo "$submenu_6_cmd_on" ;;
         "USB baixa latência") echo "$submenu_8_cmd_on" ;;
         "Prioridade HID") echo "$submenu_9_cmd_on" ;;
@@ -820,8 +817,6 @@ map_tweak_to_cmd() {
         "Resposta linear do mouse (1:1)") echo "$submenu_14_cmd_on" ;;
         "Aceleração do mouse desligada") echo "$submenu_15_cmd_on" ;;
         "Input: baixa latência") echo "$submenu_17_cmd_on" ;;
-        "GPU: baixa latência") echo "$submenu_21_cmd_on" ;;
-        "GPU: aceleração de quadros") echo "$submenu_22_cmd_on" ;;
         "Tela interna 120Hz (fixo)") echo "$submenu_23_cmd_on" ;;
         "Prioridade de vídeo externa") echo "$submenu_26_cmd_on" ;;
         "Interrupções USB baixa latência") echo "$submenu_36_cmd_on" ;;
@@ -830,12 +825,15 @@ map_tweak_to_cmd() {
         "Transition Animation Scale") echo "$submenu_67_cmd_on" ;;
         "Animator Duration Scale") echo "$submenu_68_cmd_on" ;;
         "Input Priority") echo "$submenu_33_cmd_on" ;;
-        "Input Filter") echo "$submenu_34_cmd_on" ;;
         "Max Events per Sec") echo "$submenu_35_cmd_on" ;;
         "SF Latch Unsignaled") echo "$submenu_73_cmd_on" ;;
         "Display Primary External") echo "$submenu_74_cmd_on" ;;
         "HWUI Render Dirty Regions") echo "$submenu_75_cmd_on" ;;
         "Video Low Latency Path") echo "$submenu_76_cmd_on" ;;
+        "Input Reduce Input Lag") echo "$submenu_77_cmd_on" ;;
+        "Input Dispatch Fast") echo "$submenu_78_cmd_on" ;;
+        "Input Power Saving") echo "$submenu_79_cmd_on" ;;
+        "Input Resample") echo "$submenu_81_cmd_on" ;;
         *) echo "" ;;
     esac
 }
@@ -949,42 +947,41 @@ toggle_tweak() {
 # SUBMENUS (chamadas) — comandos usados pelo toggle
 # =====================================================
 
-submenu_1_cmd_on="settings put secure tap_duration_threshold 80"
+submenu_1_cmd_on="settings put secure tap_duration_threshold 70"
 submenu_1_cmd_off="settings put secure tap_duration_threshold 100"
-submenu_2_cmd_on="settings put secure long_press_timeout 300"
+
+submenu_2_cmd_on="settings put secure long_press_timeout 280"
 submenu_2_cmd_off="settings put secure long_press_timeout 500"
-submenu_3_cmd_on="settings put secure multi_press_timeout 130"
+
+submenu_3_cmd_on="settings put secure multi_press_timeout 115"
 submenu_3_cmd_off="settings put secure multi_press_timeout 300"
-submenu_4_cmd_on="settings put secure accessibility_auto_action_delay 200"
-submenu_4_cmd_off="settings put secure accessibility_auto_action_delay 200"
-submenu_5_cmd_on="settings put global block_untrusted_touches 0"
-submenu_5_cmd_off="settings put global block_untrusted_touches 1"
+
 submenu_6_cmd_on="settings put global restricted_device_performance '0,0'"
 submenu_6_cmd_off="settings put global restricted_device_performance '1,1'"
 
 submenu_8_cmd_on="setprop persist.usb.low_latency_mode 1"
 submenu_8_cmd_off="setprop persist.usb.low_latency_mode 0"
+
 submenu_9_cmd_on="setprop vendor.usb.hid.priority 2"
 submenu_9_cmd_off="setprop vendor.usb.hid.priority 1"
+
 submenu_10_cmd_on="setprop persist.vendor.usb.high_speed 1"
 submenu_10_cmd_off="setprop persist.vendor.usb.high_speed 0"
+
 submenu_11_cmd_on="setprop persist.vendor.usb.power 1"
 submenu_11_cmd_off="setprop persist.vendor.usb.power 0"
+
 submenu_13_cmd_on="setprop vendor.usb.mouse.jitter_filter 0"
 submenu_13_cmd_off="setprop vendor.usb.mouse.jitter_filter 1"
 
 submenu_14_cmd_on="setprop persist.sys.mouse.linear_response 1"
 submenu_14_cmd_off="setprop persist.sys.mouse.linear_response 0"
+
 submenu_15_cmd_on="setprop persist.sys.pointer.acceleration 0"
 submenu_15_cmd_off="setprop persist.sys.pointer.acceleration 1"
 
 submenu_17_cmd_on="setprop persist.sys.input.low_latency_mode 1"
 submenu_17_cmd_off="setprop persist.sys.input.low_latency_mode 0"
-
-submenu_21_cmd_on="setprop persist.sys.gpu.low_latency 1"
-submenu_21_cmd_off="setprop persist.sys.gpu.low_latency 0"
-submenu_22_cmd_on="setprop persist.sys.gpu.frame_boost 1"
-submenu_22_cmd_off="setprop persist.sys.gpu.frame_boost 0"
 
 submenu_23_cmd_on="settings put system peak_refresh_rate 120; settings put system min_refresh_rate 120"
 submenu_23_cmd_off="settings delete system peak_refresh_rate; settings delete system.min_refresh_rate"
@@ -995,10 +992,7 @@ submenu_26_cmd_off="setprop vendor.display.external_priority 0"
 submenu_33_cmd_on="setprop persist.sys.input.priority 1"
 submenu_33_cmd_off="setprop persist.sys.input.priority 0"
 
-submenu_34_cmd_on="setprop persist.sys.input.filter 0"
-submenu_34_cmd_off="setprop persist.sys.input.filter 1"
-
-submenu_35_cmd_on="setprop windowsmgr.max_events_per_sec 90"
+submenu_35_cmd_on="setprop windowsmgr.max_events_per_sec 240"
 submenu_35_cmd_off="setprop windowsmgr.max_events_per_sec 60"
 
 submenu_36_cmd_on="setprop persist.vendor.usb.low_latency_interrupts 1"
@@ -1009,8 +1003,10 @@ submenu_65_cmd_off="setprop persist.sys.cpu.boost 0"
 
 submenu_66_cmd_on="settings put global window_animation_scale 0"
 submenu_66_cmd_off="settings put global window_animation_scale 1"
+
 submenu_67_cmd_on="settings put global transition_animation_scale 0"
 submenu_67_cmd_off="settings put global transition_animation_scale 1"
+
 submenu_68_cmd_on="settings put global animator_duration_scale 0"
 submenu_68_cmd_off="settings put global animator_duration_scale 1"
 
@@ -1025,6 +1021,18 @@ submenu_75_cmd_off="setprop debug.hwui.render_dirty_regions true"
 
 submenu_76_cmd_on="setprop persist.video.low_latency_path 1"
 submenu_76_cmd_off="setprop persist.video.low_latency_path 0"
+
+submenu_77_cmd_on="settings put global input.reduce_input_lag 1"
+submenu_77_cmd_off="settings put global input.reduce_input_lag 0"
+
+submenu_78_cmd_on="setprop persist.sys.input.dispatch_fast 1"
+submenu_78_cmd_off="setprop persist.sys.input.dispatch_fast 0"
+
+submenu_79_cmd_on="setprop debug.input.power_saving 0"
+submenu_79_cmd_off="setprop debug.input.power_saving 1"
+
+submenu_81_cmd_on="setprop persist.sys.input.resample 0"
+submenu_81_cmd_off="setprop persist.sys.input.resample 1"
 
 apply_safe_performance() {
     echo -e "${CYAN}${ARROW} Ativando modo PERFORMANCE ULTRA SEGURO...${RESET}"
@@ -1223,8 +1231,8 @@ submenu_reset() {
     settings put secure tap_duration_threshold 100
     settings put secure long_press_timeout 500
     settings put secure multi_press_timeout 300
-    settings put secure accessibility_auto_action_delay 200
     settings put global block_untrusted_touches 1
+    settings put global input.reduce_input_lag 0
     settings delete system peak_refresh_rate
     settings delete system min_refresh_rate
     settings delete global display_dual_output
@@ -1242,18 +1250,16 @@ submenu_reset() {
     setprop persist.sys.input.low_latency_mode 0
     setprop persist.sys.input.high_update_rate false
 
-    setprop persist.sys.gpu.low_latency 0
-    setprop persist.sys.gpu.frame_boost 0
-
     setprop vendor.display.external_priority 0
 
     setprop vendor.hid.input.fastpath 0
     setprop persist.sys.input.filter 1
     setprop persist.sys.input.resample 1
     setprop persist.vendor.usb.low_latency_interrupts 1
-    setprop persist.sys.input.dispatch_fast 1
+    setprop persist.sys.input.dispatch_fast 0
     
     setprop debug.input.low_latency 1
+    setprop debug.input.power_saving 1
     
     setprop windowsmgr.max_events_per_sec 120
     
@@ -1315,8 +1321,6 @@ if [ "$1" = "--ativar-todos" ]; then
     apply_if_enabled "Tempo mínimo do toque" "$submenu_1_cmd_on"
     apply_if_enabled "Tempo do toque longo" "$submenu_2_cmd_on"
     apply_if_enabled "Toques rápidos (duplo/triplo)" "$submenu_3_cmd_on"
-    apply_if_enabled "Ações automáticas mais rápidas" "$submenu_4_cmd_on"
-    apply_if_enabled "Permitir toques no espelhamento" "$submenu_5_cmd_on"
     apply_if_enabled "Desbloquear desempenho do sistema" "$submenu_6_cmd_on"
     apply_if_enabled "Tela interna 120Hz (fixo)" "$submenu_23_cmd_on"
 
@@ -1331,8 +1335,6 @@ if [ "$1" = "--ativar-todos" ]; then
     apply_if_enabled "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on"
     apply_if_enabled "Aceleração do mouse desligada" "$submenu_15_cmd_on"
     apply_if_enabled "Input: baixa latência" "$submenu_17_cmd_on"
-    apply_if_enabled "GPU: baixa latência" "$submenu_21_cmd_on"
-    apply_if_enabled "GPU: aceleração de quadros" "$submenu_22_cmd_on"
     apply_if_enabled "Prioridade de vídeo externa" "$submenu_26_cmd_on"
     apply_if_enabled "Interrupções USB baixa latência" "$submenu_36_cmd_on"
     
@@ -1341,13 +1343,17 @@ if [ "$1" = "--ativar-todos" ]; then
     apply_if_enabled "Animator Duration Scale" "$submenu_68_cmd_on"
     
     apply_if_enabled "Input Priority" "$submenu_33_cmd_on"
-    apply_if_enabled "Input Filter" "$submenu_34_cmd_on"
     apply_if_enabled "Max Events per Sec" "$submenu_35_cmd_on"
     
     apply_if_enabled "SF Latch Unsignaled" "$submenu_73_cmd_on"
     apply_if_enabled "Display Primary External" "$submenu_74_cmd_on"
     apply_if_enabled "HWUI Render Dirty Regions" "$submenu_75_cmd_on"
     apply_if_enabled "Video Low Latency Path" "$submenu_76_cmd_on"
+    
+    apply_if_enabled "Input Reduce Input Lag" "$submenu_77_cmd_on"
+    apply_if_enabled "Input Dispatch Fast" "$submenu_78_cmd_on"
+    apply_if_enabled "Input Power Saving" "$submenu_79_cmd_on"
+    apply_if_enabled "Input Resample" "$submenu_81_cmd_on"
 
     echo -e "${GREEN}✔ Todos os tweaks aplicados (spoof NÃO foi ativado).${RESET}"
     exit 0
@@ -1378,48 +1384,46 @@ menu_todos_tweaks() {
         echo -e "${BOLD}${CYAN}────────────────────────────────────${RESET}"
         echo -e "${GREEN}🟢 ATIVO     ${RED}🔴 DESATIVADO${RESET}\n"
 
-        printf " %b [01] ⏱ Tempo mínimo do toque\n" "$(icon check_setting secure tap_duration_threshold 80)"
-        printf " %b [02] ⌛ Tempo do toque longo\n" "$(icon check_setting secure long_press_timeout 300)"
-        printf " %b [03] ⚡ Toques rápidos (duplo / triplo)\n" "$(icon check_setting secure multi_press_timeout 130)"
-        printf " %b [04] 🤖 Ações automáticas mais rápidas\n" "$(icon check_setting secure accessibility_auto_action_delay 200)"
-        printf " %b [05] 🖥 Toque no espelhamento\n" "$(icon check_setting global block_untrusted_touches 0)"
-        printf " %b [06] 🚀 Desempenho do sistema\n" "$(icon check_setting global restricted_device_performance '0,0')"
+        printf " %b [01] ⏱ Tempo mínimo do toque\n" "$(icon check_setting secure tap_duration_threshold 70)"
+        printf " %b [02] ⌛ Tempo do toque longo\n" "$(icon check_setting secure long_press_timeout 280)"
+        printf " %b [03] ⚡ Toques rápidos (duplo/triplo)\n" "$(icon check_setting secure multi_press_timeout 115)"
+        printf " %b [04] 🚀 Desempenho do sistema\n" "$(icon check_setting global restricted_device_performance '0,0')"
         echo ""
 
-        printf " %b [07] ⚡ USB baixa latência\n" "$(icon check_prop persist.usb.low_latency_mode 1)"
-        printf " %b [08] 🎯 Prioridade HID\n" "$(icon check_prop vendor.usb.hid.priority 2)"
-        printf " %b [09] 🚄 USB High Speed\n" "$(icon check_prop persist.vendor.usb.high_speed 1)"
-        printf " %b [10] 🔋 Potência USB\n" "$(icon check_prop persist.vendor.usb.power 1)"
-        printf " %b [11] 🖱 Anti-jitter mouse\n" "$(icon check_prop vendor.usb.mouse.jitter_filter 0)"
+        printf " %b [05] ⚡ USB baixa latência\n" "$(icon check_prop persist.usb.low_latency_mode 1)"
+        printf " %b [06] 🎯 Prioridade HID\n" "$(icon check_prop vendor.usb.hid.priority 2)"
+        printf " %b [07] 🚄 USB High Speed\n" "$(icon check_prop persist.vendor.usb.high_speed 1)"
+        printf " %b [08] 🔋 Potência USB\n" "$(icon check_prop persist.vendor.usb.power 1)"
+        printf " %b [09] 🖱 Anti-jitter mouse\n" "$(icon check_prop vendor.usb.mouse.jitter_filter 0)"
         echo ""
 
-        printf " %b [12] 🎯 Mouse linear (1:1)\n" "$(icon check_prop persist.sys.mouse.linear_response 1)"
-        printf " %b [13] 🚫 Mouse sem aceleração\n" "$(check_mouse_acceleration)"
-        printf " %b [14] ⚡ Input baixa latência\n" "$(icon check_prop persist.sys.input.low_latency_mode 1)"
+        printf " %b [10] 🎯 Mouse linear (1:1)\n" "$(icon check_prop persist.sys.mouse.linear_response 1)"
+        printf " %b [11] 🚫 Mouse sem aceleração\n" "$(check_mouse_acceleration)"
+        printf " %b [12] ⚡ Input baixa latência\n" "$(icon check_prop persist.sys.input.low_latency_mode 1)"
         echo ""
 
-        printf " %b [15] 🎮 GPU baixa latência\n" "$(icon check_prop persist.sys.gpu.low_latency 1)"
-        printf " %b [16] 🧩 GPU aceleração quadros\n" "$(icon check_prop persist.sys.gpu.frame_boost 1)"
+        printf " %b [13] 📱 Tela 120Hz fixo\n" "$(icon check_setting system peak_refresh_rate 120)"
+        printf " %b [14] 📺 Prioridade vídeo externa\n" "$(check_priority_video_external)"
         echo ""
 
-        printf " %b [17] 📱 Tela 120Hz fixo\n" "$(icon check_setting system peak_refresh_rate 120)"
-        printf " %b [18] 📺 Prioridade vídeo externa\n" "$(check_priority_video_external)"
+        printf " %b [15] ⏱ IRQ USB baixa latência\n" "$(icon check_prop persist.vendor.usb.low_latency_interrupts 1)"
         echo ""
 
-        printf " %b [19] ⏱ IRQ USB baixa latência\n" "$(icon check_prop persist.vendor.usb.low_latency_interrupts 1)"
-        echo ""
-
-        printf " %b [20] 🪟 Window Animation Scale\n" "$(icon check_setting global window_animation_scale 0)"
-        printf " %b [21] 🔄 Transition Animation Scale\n" "$(icon check_setting global transition_animation_scale 0)"
-        printf " %b [22] ⏱️ Animator Duration Scale\n" "$(icon check_setting global animator_duration_scale 0)"
-        printf " %b [23] 🎯 Input Priority\n" "$(icon check_prop persist.sys.input.priority 1)"
-        printf " %b [24] 🚫 Input Filter\n" "$(icon check_prop persist.sys.input.filter 0)"
-        printf " %b [25] 🪟 Max Events per Sec\n" "$(icon check_prop windowsmgr.max_events_per_sec 90)"
+        printf " %b [16] 🪟 Window Animation Scale\n" "$(icon check_setting global window_animation_scale 0)"
+        printf " %b [17] 🔄 Transition Animation Scale\n" "$(icon check_setting global transition_animation_scale 0)"
+        printf " %b [18] ⏱️ Animator Duration Scale\n" "$(icon check_setting global animator_duration_scale 0)"
+        printf " %b [19] 🎯 Input Priority\n" "$(icon check_prop persist.sys.input.priority 1)"
+        printf " %b [20] 🪟 Max Events per Sec\n" "$(icon check_prop windowsmgr.max_events_per_sec 240)"
         
-        printf " %b [26] 🔒 SF Latch Unsignaled\n" "$(icon check_prop debug.sf.latch_unsignaled 0)"
-        printf " %b [27] 🖥 Display Primary External\n" "$(icon check_prop persist.sys.display.primary_external 1)"
-        printf " %b [28] 🎨 HWUI Render Dirty Regions\n" "$(icon check_prop debug.hwui.render_dirty_regions false)"
-        printf " %b [29] 🎬 Video Low Latency Path\n" "$(icon check_prop persist.video.low_latency_path 1)"
+        printf " %b [21] 🔒 SF Latch Unsignaled\n" "$(icon check_prop debug.sf.latch_unsignaled 0)"
+        printf " %b [22] 🖥 Display Primary External\n" "$(icon check_prop persist.sys.display.primary_external 1)"
+        printf " %b [23] 🎬 Video Low Latency Path\n" "$(icon check_prop persist.video.low_latency_path 1)"
+        
+        printf " %b [24] 📉 Input Reduce Input Lag\n" "$(icon check_setting global input.reduce_input_lag 1)"
+        printf " %b [25] ⚡ Input Dispatch Fast\n" "$(icon check_prop persist.sys.input.dispatch_fast 1)"
+        printf " %b [26] 🔋 Input Power Saving\n" "$(icon check_prop debug.input.power_saving 0)"
+        printf " %b [27] 🎨 HWUI Render Dirty Regions\n" "$(icon check_prop debug.hwui.render_dirty_regions false)"
+        printf " %b [28] 🔄 Input Resample\n" "$(icon check_prop persist.sys.input.resample 0)"
         
         echo -e "\n${BOLD}${CYAN}────────────────────────────────────${RESET}"
         
@@ -1428,8 +1432,8 @@ menu_todos_tweaks() {
         else
             SPOOF_ICON="${RED}🔴${RESET}"
         fi
-        printf " %b [30] 🎯 Free Fire 120 FPS\n" "$SPOOF_ICON"
-        printf " ${RED}🔴${RESET} [31] ♻️  Reset total\n"
+        printf " %b [29] 🎯 Free Fire 120 FPS\n" "$SPOOF_ICON"
+        printf " ${RED}🔴${RESET} [30] ♻️  Reset total\n"
         
         echo -e "\n${BOLD}${CYAN}[0] ⬅️ Voltar${RESET}"
         echo ""
@@ -1439,34 +1443,33 @@ menu_todos_tweaks() {
             01) toggle_tweak "Tempo mínimo do toque" "$submenu_1_cmd_on" "$submenu_1_cmd_off" ;;
             02) toggle_tweak "Tempo do toque longo" "$submenu_2_cmd_on" "$submenu_2_cmd_off" ;;
             03) toggle_tweak "Toques rápidos (duplo/triplo)" "$submenu_3_cmd_on" "$submenu_3_cmd_off" ;;
-            04) toggle_tweak "Ações automáticas mais rápidas" "$submenu_4_cmd_on" "$submenu_4_cmd_off" ;;
-            05) toggle_tweak "Permitir toques no espelhamento" "$submenu_5_cmd_on" "$submenu_5_cmd_off" ;;
-            06) toggle_tweak "Desbloquear desempenho do sistema" "$submenu_6_cmd_on" "$submenu_6_cmd_off" ;;
-            07) toggle_tweak "USB baixa latência" "$submenu_8_cmd_on" "$submenu_8_cmd_off" ;;
-            08) toggle_tweak "Prioridade HID" "$submenu_9_cmd_on" "$submenu_9_cmd_off" ;;
-            09) toggle_tweak "Modo High Speed USB" "$submenu_10_cmd_on" "$submenu_10_cmd_off" ;;
-            10) toggle_tweak "Potência USB aprimorada" "$submenu_11_cmd_on" "$submenu_11_cmd_off" ;;
-            11) toggle_tweak "Anti-jitter USB (mouse)" "$submenu_13_cmd_on" "$submenu_13_cmd_off" ;;
-            12) toggle_tweak "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on" "$submenu_14_cmd_off" ;;
-            13) toggle_tweak "Aceleração do mouse desligada" "$submenu_15_cmd_on" "$submenu_15_cmd_off" ;;
-            14) toggle_tweak "Input: baixa latência" "$submenu_17_cmd_on" "$submenu_17_cmd_off" ;;
-            15) toggle_tweak "GPU: baixa latência" "$submenu_21_cmd_on" "$submenu_21_cmd_off" ;;
-            16) toggle_tweak "GPU: aceleração de quadros" "$submenu_22_cmd_on" "$submenu_22_cmd_off" ;;
-            17) toggle_tweak "Tela interna 120Hz (fixo)" "$submenu_23_cmd_on" "$submenu_23_cmd_off" ;;
-            18) toggle_tweak "Prioridade de vídeo externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
-            19) toggle_tweak "Interrupções USB baixa latência" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
-            20) toggle_tweak "Window Animation Scale" "$submenu_66_cmd_on" "$submenu_66_cmd_off" ;;
-            21) toggle_tweak "Transition Animation Scale" "$submenu_67_cmd_on" "$submenu_67_cmd_off" ;;
-            22) toggle_tweak "Animator Duration Scale" "$submenu_68_cmd_on" "$submenu_68_cmd_off" ;;
-            23) toggle_tweak "Input Priority" "$submenu_33_cmd_on" "$submenu_33_cmd_off" ;;
-            24) toggle_tweak "Input Filter" "$submenu_34_cmd_on" "$submenu_34_cmd_off" ;;
-            25) toggle_tweak "Max Events per Sec" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
-            26) toggle_tweak "SF Latch Unsignaled" "$submenu_73_cmd_on" "$submenu_73_cmd_off" ;;
-            27) toggle_tweak "Display Primary External" "$submenu_74_cmd_on" "$submenu_74_cmd_off" ;;
-            28) toggle_tweak "HWUI Render Dirty Regions" "$submenu_75_cmd_on" "$submenu_75_cmd_off" ;;
-            29) toggle_tweak "Video Low Latency Path" "$submenu_76_cmd_on" "$submenu_76_cmd_off" ;;
-            30) submenu_spoof ;;
-            31) submenu_reset ;;
+            04) toggle_tweak "Desbloquear desempenho do sistema" "$submenu_6_cmd_on" "$submenu_6_cmd_off" ;;
+            05) toggle_tweak "USB baixa latência" "$submenu_8_cmd_on" "$submenu_8_cmd_off" ;;
+            06) toggle_tweak "Prioridade HID" "$submenu_9_cmd_on" "$submenu_9_cmd_off" ;;
+            07) toggle_tweak "Modo High Speed USB" "$submenu_10_cmd_on" "$submenu_10_cmd_off" ;;
+            08) toggle_tweak "Potência USB aprimorada" "$submenu_11_cmd_on" "$submenu_11_cmd_off" ;;
+            09) toggle_tweak "Anti-jitter USB (mouse)" "$submenu_13_cmd_on" "$submenu_13_cmd_off" ;;
+            10) toggle_tweak "Resposta linear do mouse (1:1)" "$submenu_14_cmd_on" "$submenu_14_cmd_off" ;;
+            11) toggle_tweak "Aceleração do mouse desligada" "$submenu_15_cmd_on" "$submenu_15_cmd_off" ;;
+            12) toggle_tweak "Input: baixa latência" "$submenu_17_cmd_on" "$submenu_17_cmd_off" ;;
+            13) toggle_tweak "Tela interna 120Hz (fixo)" "$submenu_23_cmd_on" "$submenu_23_cmd_off" ;;
+            14) toggle_tweak "Prioridade de vídeo externa" "$submenu_26_cmd_on" "$submenu_26_cmd_off" ;;
+            15) toggle_tweak "Interrupções USB baixa latência" "$submenu_36_cmd_on" "$submenu_36_cmd_off" ;;
+            16) toggle_tweak "Window Animation Scale" "$submenu_66_cmd_on" "$submenu_66_cmd_off" ;;
+            17) toggle_tweak "Transition Animation Scale" "$submenu_67_cmd_on" "$submenu_67_cmd_off" ;;
+            18) toggle_tweak "Animator Duration Scale" "$submenu_68_cmd_on" "$submenu_68_cmd_off" ;;
+            19) toggle_tweak "Input Priority" "$submenu_33_cmd_on" "$submenu_33_cmd_off" ;;
+            20) toggle_tweak "Max Events per Sec" "$submenu_35_cmd_on" "$submenu_35_cmd_off" ;;
+            21) toggle_tweak "SF Latch Unsignaled" "$submenu_73_cmd_on" "$submenu_73_cmd_off" ;;
+            22) toggle_tweak "Display Primary External" "$submenu_74_cmd_on" "$submenu_74_cmd_off" ;;
+            23) toggle_tweak "Video Low Latency Path" "$submenu_76_cmd_on" "$submenu_76_cmd_off" ;;
+            24) toggle_tweak "Input Reduce Input Lag" "$submenu_77_cmd_on" "$submenu_77_cmd_off" ;;
+            25) toggle_tweak "Input Dispatch Fast" "$submenu_78_cmd_on" "$submenu_78_cmd_off" ;;
+            26) toggle_tweak "Input Power Saving" "$submenu_79_cmd_on" "$submenu_79_cmd_off" ;;
+            27) toggle_tweak "HWUI Render Dirty Regions" "$submenu_75_cmd_on" "$submenu_75_cmd_off" ;;
+            28) toggle_tweak "Input Resample" "$submenu_81_cmd_on" "$submenu_81_cmd_off" ;;
+            29) submenu_spoof ;;
+            30) submenu_reset ;;
             0) return ;;
             *) echo -e "${RED}Opção inválida...${RESET}"; sleep 1 ;;
         esac
